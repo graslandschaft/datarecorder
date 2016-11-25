@@ -1,0 +1,15 @@
+# rec software features
+- display: checkbox: switch between coarse and high-res display
+- display: photo-button: save single image of setup
+- setup photo: save single image of setup at start of recording, if using camera
+- display: add zoom
+- comfort functions: set framerate and ROI
+- change audiodisplay to function like video display: by callback
+
+# structure: 
+- main class should be derived from template: easier to maintain
+- audiodisplay: do not send data but collect it similar to videoframes
+
+# analysis / experiment improvements
+- analysis: get peak amplitude distribution of pulses -> use it to calibrate audio output
+
