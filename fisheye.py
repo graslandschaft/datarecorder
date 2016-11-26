@@ -27,7 +27,7 @@ except Exception, details:
     print 'Unfortunately, your system misses the PyQt4 packages.'
     quit()
 
-from VideoCanvas import VideoCanvas
+from VideoCanvas import VideoTab, VideoCanvas
 from Camera_pointgrey import Camera as pgCamera
 from Camera_pointgrey import get_available_flycap_cameras
 from Camera import Camera
@@ -75,8 +75,8 @@ class Main(QtGui.QMainWindow):
                              rec_end='',
                              comments=list())
 
-        self.pointgrey = True
-        self.use_hydro = True
+        self.pointgrey = False
+        self.use_hydro = False
         self.fast_and_small_video = False
         self.triggered_video = False
 
@@ -149,12 +149,6 @@ class Main(QtGui.QMainWindow):
         self.video_tabs = {}
 
         self.top_layout.addWidget(self.videos)
-
-        self.framerate_counter = QtGui.QLabel('', self)
-        font = self.framerate_counter.font()
-        font.setPointSize(self.label_font_size)
-        self.framerate_counter.setFont(font)
-        self.top_layout.addWidget(self.framerate_counter)
 
         # VIDEO
         self.populate_video_tabs()
@@ -760,8 +754,6 @@ class Main(QtGui.QMainWindow):
 
     def populate_video_tabs(self):
 
-        self.video_skipstep = 3  # sets display quality: display only every nth pixel
-
         if self.pointgrey:
             cam_num = get_available_flycap_cameras()
             print('Number of flycap-cameras: {}'.format(cam_num))
@@ -789,9 +781,8 @@ class Main(QtGui.QMainWindow):
 
             # create tabs for cameras
             for cam_name, cam in self.cameras.items():
-                self.video_tabs[cam_name] = VideoCanvas(parent=self)    
+                self.video_tabs[cam_name] = VideoTab(self, cam_name, parent=self)
                 self.videos.addTab(self.video_tabs[cam_name], cam_name)
-                self.video_tabs[cam_name].setLayout(QtGui.QHBoxLayout())
 
             # create threads for cameras
             self.camera_threads = dict()
@@ -824,17 +815,16 @@ class Main(QtGui.QMainWindow):
 
         # grab data from camera and display
         cam_name = str(self.videos.tabText(self.videos.currentIndex()))
-        data = self.cameras[cam_name].get_dispframe()
-        if data == None:
-            return
-        frame, dtime, fr = data
-        self.last_framerate = fr
-        self.framerate_counter.setText('Framerate:\n{:.1f} Hz'.format(fr))
 
         if not self.idle_screen:
-            # reduce resolution
-            sframe = frame[::self.video_skipstep, ::self.video_skipstep]
-            self.video_tabs[cam_name].setImage(QtGui.QPixmap.fromImage(iqt.ImageQt(image.fromarray(sframe))))
+            data = self.cameras[cam_name].get_dispframe()  # grab current frame
+            if data == None:
+                return
+            frame, dtime, fr = data
+            self.video_tabs[cam_name].canvas.setImage(frame)
+            
+            self.last_framerate = fr
+            self.video_tabs[cam_name].framerate_counter.setText('Framerate:\n{:.1f} Hz'.format(fr))
 
     def update_video_skipstep(self, val):
         self.mutex.lock()
