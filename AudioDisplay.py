@@ -13,15 +13,21 @@ except Exception, details:
     print 'Unfortunately, your system misses the PyQt4 packages.'
     quit()
 
-class AudioDisplay(QtCore.QObject):
-    def __init__(self, main, debug=0, parent=None):
-        QtCore.QObject.__init__(self, parent)
+class AudioDisplay(QtGui.QGroupBox):
+    def __init__(self, main, name, channel_control=False, debug=0, parent=None):
+        QtGui.QGroupBox.__init__(self, name, parent)
 
+        # generate layout
+        self.setLayout(QtGui.QHBoxLayout())
+
+        # ##############################
+        
         self.debug = debug
         self.idle_screen = False
         self.audio_diplay_time = 10.
         self.audio_samplerate = 44100
         self.disp_samplerate = 100
+        
         # bufferqt
         self.audio_t = np.arange(-self.audio_diplay_time, 0., 1./self.audio_samplerate)
         self.audiodata = np.zeros(int(self.audio_t.size), dtype=float)
@@ -30,18 +36,24 @@ class AudioDisplay(QtCore.QObject):
         self.mask[::self.stepsize] = 1.
 
         self.ymax = 1.
+        self.device = None
 
+        # ##############################
         # THE PLOT
+
         self.figure = plt.figure()
+        self.canvas = Canvas(self.figure, parent=self)
+        self.canvas.setMaximumHeight(200)
+
+        self.layout().addWidget(self.canvas)
+
+        # setup plot
         params = {'axes.labelsize': 22,
                   'font.size': 16,
                   'ytick.labelsize': 16,
                   'xtick.labelsize': 16}
         plt.rcParams.update(params)
-        self.canvas = Canvas(self.figure, parent=self)
-        self.canvas.setMaximumHeight(200)
 
-        # setup plot
         # self.toolbar = NavigationToolbar( self.canvas, parent=self)
         plt.subplots_adjust(left=0., right=1., bottom=0.2, top=1.)
         self.ax = self.figure.add_subplot(111)
@@ -51,12 +63,51 @@ class AudioDisplay(QtCore.QObject):
         self.ax.set_ylim(-self.ymax, self.ymax)
         self.ax.set_xlim(-self.audio_diplay_time-.25, 0.1)
 
+        # ##############################
+        # buttons and channel control
+
+        optionLayout = QtGui.QVBoxLayout()
+        self.layout().addLayout(optionLayout)
+        # volume buttons
+        self.button_audio_plus = QtGui.QPushButton('+ Vol')
+        self.button_audio_minus = QtGui.QPushButton('- Vol')
+        optionLayout.addWidget(self.button_audio_plus)
+        optionLayout.addWidget(self.button_audio_minus)
+        if channel_control:
+            spinLayout = QtGui.QHBoxLayout()
+            optionLayout.addLayout(spinLayout)
+            spinLayout.addWidget(QtGui.QLabel('Ch.'))
+            self.channel_control = QtGui.QSpinBox()
+            spinLayout.addWidget(self.channel_control)
+            self.channel_control.setMinimum(1)
+            self.channel_control.setMaximum(1)
+            self.channel_control.setEnabled(False)
+            self.channel_control.valueChanged.connect(self.channel_changed)
+            xy = 80
+        else:
+            xy = 100
+
+        self.canvas.setMaximumHeight(200)
+        self.button_audio_plus.setMinimumHeight(xy)
+        self.button_audio_plus.setMaximumWidth(xy)
+        self.button_audio_minus.setMinimumHeight(xy)
+        self.button_audio_minus.setMaximumWidth(xy)
+
+        # ##############################
+
         # connections
         self.connect(main, QtCore.SIGNAL('idle screen (PyQt_PyObject)'), self.set_idle_screen)
-        self.connect(main, QtCore.SIGNAL('audio_plus'), self.audio_plus)
-        self.connect(main, QtCore.SIGNAL('audio_minus'), self.audio_minus)
+        self.connect(self.button_audio_plus, QtCore.SIGNAL('clicked()'), self.audio_plus)
+        self.connect(self.button_audio_minus, QtCore.SIGNAL('clicked()'), self.audio_minus)
 
         QtCore.QTimer().singleShot( 600, self.beautify_layout )
+
+    def channel_changed(self, val):
+        if self.device != None:
+            print('channel changed')
+            self.device.channels = val
+            self.device.stop_recording()
+            self.device.start_capture()
 
     def set_samplerate(self, val):
         self.audio_samplerate = val

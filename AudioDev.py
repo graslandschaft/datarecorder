@@ -22,12 +22,13 @@ def show_available_input_devices():
             print("Input Device id: {} - {} - channels: {}".format(i, name, chans))
 
 class AudioDev(QtCore.QObject):
-    def __init__( self, main, use_hydro=False, fast_and_small_video=False, 
+    def __init__( self, main, display=None, use_hydro=False, fast_and_small_video=False, 
         triggering=False, debug=0, parent=None):
         QtCore.QObject.__init__(self, parent)
 
         self.mutex = QtCore.QMutex()
         
+        self.display = display
         self.triggering = triggering
         self.fast_and_small_video = fast_and_small_video
         self.use_hydro = use_hydro
@@ -45,7 +46,7 @@ class AudioDev(QtCore.QObject):
         self.channels = 1
         
         if use_hydro:
-            self.rate = 96000
+            self.rate = 44100
         else:
             self.rate = 44100
 
@@ -64,6 +65,11 @@ class AudioDev(QtCore.QObject):
         self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), main.set_timestamp)
         self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), main.raise_error)
 
+        if display != None:
+            self.connect(self, QtCore.SIGNAL('new data (PyQt_PyObject)'), main.audio_disp.update_data)
+            # tell the display where to change the channels
+            main.audio_disp.device = self
+
     def get_input_device_index_by_name(self, devname):
         info = self.audio.get_host_api_info_by_index(0)
         numdevices = info.get('deviceCount')
@@ -78,6 +84,9 @@ class AudioDev(QtCore.QObject):
 
     def get_defined_framerate(self):
         return float(self.rate)/float(self.chunk)/float(self.trigger_devisor)
+
+    def set_channels(self, val):
+        pass
 
     def start_capture(self):
         if self.debug > 0:
@@ -106,6 +115,14 @@ class AudioDev(QtCore.QObject):
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         s = timestamp + ' \t ' + 'selected input device: {}'.format(self.in_device['name'])
         self.emit(QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), s)
+
+        # display-device connection: max channels of input device for display button
+        if self.display != None:
+            maxchan = self.in_device['maxInputChannels']
+            self.display.channel_control.setRange(1, maxchan)
+            # self.display.channel_control.setEnabled(True)
+
+        print('channels', self.channels)
 
         # PREPARE RECORDING
         instream = self.audio.open(

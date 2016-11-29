@@ -120,22 +120,12 @@ class Main(QtGui.QMainWindow):
         self.main.setLayout(self.main_layout)
 
         self.top_layout = QtGui.QHBoxLayout()
-        self.audio_layout = QtGui.QHBoxLayout()
+        self.audio_layout = QtGui.QVBoxLayout()
         self.bottom_layout = QtGui.QHBoxLayout()
         self.bottom_info_layout = QtGui.QHBoxLayout()
 
         self.main_layout.addLayout(self.top_layout)
-        
-        audioinput_group = QtGui.QGroupBox('Audio Input')
-        audioinput_group.setLayout(self.audio_layout)
-        self.main_layout.addWidget(audioinput_group)
-
-        if self.audio_playback:
-            self.audioout_layout = QtGui.QHBoxLayout()
-            audioout_group = QtGui.QGroupBox('Audio Output')
-            audioout_group.setLayout(self.audioout_layout)
-            self.main_layout.addWidget(audioout_group)
-
+        self.main_layout.addLayout(self.audio_layout)
         self.main_layout.addLayout(self.bottom_layout)
         self.main_layout.addLayout(self.bottom_info_layout)
 
@@ -152,32 +142,17 @@ class Main(QtGui.QMainWindow):
 
         # VIDEO
         self.populate_video_tabs()
-        # time.sleep(1)
 
         # #################
 
         # AUDIO DISPLAY
-        self.audio_disp = AudioDisplay(self, self.debug)
-        self.button_audio_plus = QtGui.QPushButton('+ Vol')
-        self.button_audio_minus = QtGui.QPushButton('- Vol')
-        self.audio_pm_layout = QtGui.QVBoxLayout()
-        
-        self.audio_layout.addWidget(self.audio_disp.canvas)
-        self.audio_layout.addLayout(self.audio_pm_layout)
-        self.audio_pm_layout.addWidget(self.button_audio_plus)
-        self.audio_pm_layout.addWidget(self.button_audio_minus)
-        # self.audio_layout.addWidget(self.audo_disp.toolbar)
-
-        xy = 110
-        self.audio_disp.canvas.setMaximumHeight(200)
-        self.button_audio_plus.setMinimumHeight(xy)
-        self.button_audio_plus.setMaximumWidth(xy)
-        self.button_audio_minus.setMinimumHeight(xy)
-        self.button_audio_minus.setMaximumWidth(xy)
+        self.audio_disp = AudioDisplay(self, 'Audio Input', channel_control=True, debug=self.debug)
+        self.audio_layout.addWidget(self.audio_disp)
 
         # #################
 
         # AUDIO OUTPUT DISPLAY
+        ## defunct .. repair
         if self.audio_playback:
             self.init_replay()  # initialize replay
 
@@ -230,7 +205,7 @@ class Main(QtGui.QMainWindow):
         self.threads.append(self.threadDisp)
 
         self.audioDev = AudioDev(self, use_hydro=self.use_hydro, debug=self.debug, 
-                            fast_and_small_video=self.fast_and_small_video, triggering=self.triggered_video)
+                            fast_and_small_video=self.fast_and_small_video, triggering=self.triggered_video, display=self.audio_disp)
         self.threadAudio = QtCore.QThread(self)
         self.audioDev.moveToThread( self.threadAudio )
         self.threads.append(self.threadAudio)
@@ -253,9 +228,6 @@ class Main(QtGui.QMainWindow):
         self.connect(self, QtCore.SIGNAL('start_saving'), self.audioDev.start_saving)
         self.connect(self, QtCore.SIGNAL('start_capture'), self.audioDev.start_capture)
 
-        # data connections
-        self.connect(self.audioDev, QtCore.SIGNAL('new data (PyQt_PyObject)'), self.audio_disp.update_data)
-
         # #################
 
         # connect buttons
@@ -264,8 +236,6 @@ class Main(QtGui.QMainWindow):
         self.connect(self.button_stop, QtCore.SIGNAL('clicked()'), self.clicked_stop)
         self.connect(self.button_tag, QtCore.SIGNAL('clicked()'), self.clicked_comment)
         self.connect(self.button_idle, QtCore.SIGNAL('clicked()'), self.clicked_idle)
-        self.connect(self.button_audio_plus, QtCore.SIGNAL('clicked()'), self.clicked_button_audio_plus)
-        self.connect(self.button_audio_minus, QtCore.SIGNAL('clicked()'), self.clicked_button_audio_minus)
 
         # create keyboard shortcuts
         self.create_actions()
@@ -381,16 +351,6 @@ class Main(QtGui.QMainWindow):
         if ok:
             self.set_timestamp(s)
 
-    def clicked_button_audio_plus(self):
-        if self.debug > 0:
-            print('clicked_button_audio_plus')
-        self.emit(QtCore.SIGNAL("audio_plus"))
-
-    def clicked_button_audio_minus(self):
-        if self.debug > 0:
-            print('clicked_button_audio_minus')
-        self.emit(QtCore.SIGNAL("audio_minus"))
-
     def clicked_idle(self):
         if self.idle_screen:
             self.idle_screen = False
@@ -430,44 +390,25 @@ class Main(QtGui.QMainWindow):
         self.threadAudioOut.start()
 
         self.audioout_disp = AudioDisplay(self, self.debug)
-        self.button_audioout_plus = QtGui.QPushButton('+ Vol')
-        self.button_audioout_minus = QtGui.QPushButton('- Vol')
-        self.audioout_pm_layout = QtGui.QVBoxLayout()
-        
-        xy = 110
-        self.button_audioout_plus.setMinimumHeight(xy)
-        self.button_audioout_plus.setMaximumWidth(xy)
-        self.button_audioout_plus.setMinimumWidth(xy)
-        self.button_audioout_minus.setMinimumHeight(xy)
-        self.button_audioout_minus.setMaximumWidth(xy)
-        self.button_audioout_minus.setMinimumWidth(xy)
+        self.audio_layout.addWidget(self.audioout_disp)
 
-        self.audioout_layout.addWidget(self.audioout_disp.canvas)
-        self.audioout_layout.addLayout(self.audioout_pm_layout)
-        self.audioout_pm_layout.addWidget(self.button_audioout_plus)
-        self.audioout_pm_layout.addWidget(self.button_audioout_minus)
-
-        self.height +=  300
         self.setGeometry(self.offset_left, self.offset_top, self.width, self.height)
         self.setMinimumSize(self.width, self.height)
 
         # connections
-        # self.connect(self.button_audioout_plus, QtCore.SIGNAL('clicked()'), self.clicked_button_audioout_plus)
-        # self.connect(self.button_audioout_minus, QtCore.SIGNAL('clicked()'), self.clicked_button_audioout_minus)
-        self.connect(self, QtCore.SIGNAL('start playback'), self.audiodevout.play)
         self.connect(self.audiodevout, QtCore.SIGNAL("playback finished"), self.clicked_stop)
         self.connect(self.audiodevout, QtCore.SIGNAL('new data (PyQt_PyObject)'),
              self.audioout_disp.update_data)
 
-    def clicked_button_audio_plus(self):
-        if self.debug > 0:
-            print('clicked_button_audio_plus')
-        self.emit(QtCore.SIGNAL("audioout_plus"))
+    # def clicked_button_audio_plus(self):
+    #     if self.debug > 0:
+    #         print('clicked_button_audio_plus')
+    #     self.emit(QtCore.SIGNAL("audioout_plus"))
 
-    def clicked_button_audio_minus(self):
-        if self.debug > 0:
-            print('clicked_button_audio_minus')
-        self.emit(QtCore.SIGNAL("audioout_minus"))
+    # def clicked_button_audio_minus(self):
+    #     if self.debug > 0:
+    #         print('clicked_button_audio_minus')
+    #     self.emit(QtCore.SIGNAL("audioout_minus"))
 
     def handle_options(self, options):
         if options:
@@ -656,7 +597,7 @@ class Main(QtGui.QMainWindow):
                 f.write(u'comment: {0}\n'.format(c).encode("utf-8"))
 
     def stop_all_saving(self, restart=False):
-        print('stopping recording')
+        # print('stopping recording')
         if not self.saving:
             return
         self.saving = False
@@ -683,6 +624,11 @@ class Main(QtGui.QMainWindow):
                                  rec_start='',
                                  rec_end='',
                                  comments=list())
+
+    def restart_audio_capture(self):
+        self.audioDev.stop_recording()
+        self.msleep(200)
+        self.emit(QtCore.SIGNAL("start_capture"))
 
     def stop_all_capture(self):
         self.canvastimer.stop()
