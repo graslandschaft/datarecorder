@@ -5,6 +5,8 @@ TODO
 - config dialogs for recording devices
     - set and indicate ROI
     - set framerate
+- add info on resolution
+- add tool to estimate frame write speed for a chose resoution
 """
 
 # ######################################################
@@ -34,12 +36,6 @@ from Camera import Camera
 
 # ######################################################
 
-width, height = 1000, 800
-offset_left, offset_top = 100, 100
-max_tab_width, min_tab_width = 1000, 480
-
-# ######################################################
-
 class Main(QtGui.QMainWindow):
     def __init__( self, app, options=None, parent=None):
         QtCore.QObject.__init__(self, parent)
@@ -47,15 +43,15 @@ class Main(QtGui.QMainWindow):
         self.name = 'fisheye'
 
         self.width = 1000
-        self.height = 400
+        self.height = 1000
         self.offset_left = 100
-        self.offset_top = 100
+        self.offset_top = 30
         self.max_tab_width = 1000
-        self.min_tab_width = 400
+        self.min_tab_width = 480
 
-        self.setGeometry(offset_left, offset_top, width, height)
+        self.setGeometry(self.offset_left, self.offset_top, self.width, self.height)
         self.setSizePolicy(Qt.QSizePolicy.Maximum, Qt.QSizePolicy.Maximum)
-        self.setMinimumSize(width, height)
+        self.setMinimumSize(self.width, self.height)
         self.setWindowTitle('FishEye')
 
         # #################
@@ -75,8 +71,8 @@ class Main(QtGui.QMainWindow):
                              rec_end='',
                              comments=list())
 
-        self.pointgrey = False
-        self.use_hydro = False
+        self.pointgrey = True
+        self.use_hydro = True
         self.fast_and_small_video = False
         self.triggered_video = False
 
@@ -99,7 +95,7 @@ class Main(QtGui.QMainWindow):
 
         # time related variables
         self.recording_restart_time = 0
-        self.restart_times = np.arange(3, 25, 3)  # in hours
+        self.restart_times = np.arange(3, 25, 1)  # in hours
         self.restart_dts = list()
 
         self.programmed_stop_dt = None
@@ -133,8 +129,8 @@ class Main(QtGui.QMainWindow):
 
         # POPULATE TOP LAYOUT
         self.videos = QtGui.QTabWidget()
-        self.videos.setMinimumWidth(min_tab_width)
-        self.videos.setMaximumWidth(max_tab_width)
+        self.videos.setMinimumWidth(self.min_tab_width)
+        self.videos.setMaximumWidth(self.max_tab_width)
         self.video_recordings = None
         self.video_tabs = {}
 
@@ -146,8 +142,14 @@ class Main(QtGui.QMainWindow):
         # #################
 
         # AUDIO DISPLAY
+        # MOVE TO INDEPENDENT THREAD
         self.audio_disp = AudioDisplay(self, 'Audio Input', channel_control=True, debug=self.debug)
         self.audio_layout.addWidget(self.audio_disp)
+
+        self.threadDisp = QtCore.QThread(self)
+        self.audio_disp.moveToThread( self.threadDisp )
+        self.threadDisp.start()
+        self.threads.append(self.threadDisp)
 
         # #################
 
@@ -197,12 +199,6 @@ class Main(QtGui.QMainWindow):
         self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.timecheck)
 
         # #################
-
-        # audiodisp
-        self.threadDisp = QtCore.QThread(self)
-        self.audio_disp.moveToThread( self.threadDisp )
-        self.threadDisp.start()
-        self.threads.append(self.threadDisp)
 
         self.audioDev = AudioDev(self, use_hydro=self.use_hydro, debug=self.debug, 
                             fast_and_small_video=self.fast_and_small_video, triggering=self.triggered_video, display=self.audio_disp)
@@ -389,26 +385,17 @@ class Main(QtGui.QMainWindow):
         self.threads.append(self.threadAudioOut)
         self.threadAudioOut.start()
 
-        self.audioout_disp = AudioDisplay(self, self.debug)
+        self.audioout_disp = AudioDisplay(self, 'Audio Output', debug=self.debug)
         self.audio_layout.addWidget(self.audioout_disp)
 
         self.setGeometry(self.offset_left, self.offset_top, self.width, self.height)
         self.setMinimumSize(self.width, self.height)
 
         # connections
+        self.connect(self, QtCore.SIGNAL('start playback'), self.audiodevout.play)
         self.connect(self.audiodevout, QtCore.SIGNAL("playback finished"), self.clicked_stop)
         self.connect(self.audiodevout, QtCore.SIGNAL('new data (PyQt_PyObject)'),
              self.audioout_disp.update_data)
-
-    # def clicked_button_audio_plus(self):
-    #     if self.debug > 0:
-    #         print('clicked_button_audio_plus')
-    #     self.emit(QtCore.SIGNAL("audioout_plus"))
-
-    # def clicked_button_audio_minus(self):
-    #     if self.debug > 0:
-    #         print('clicked_button_audio_minus')
-    #     self.emit(QtCore.SIGNAL("audioout_minus"))
 
     def handle_options(self, options):
         if options:
@@ -562,7 +549,7 @@ class Main(QtGui.QMainWindow):
                 self.restart_dts.append(new_dt)
 
         # debug: test restart times
-        self.restart_dts = [datetime.now()+timedelta(seconds=20)]
+        # self.restart_dts = [datetime.now()+timedelta(seconds=20)]
 
     def timecheck(self):
         # check for next_inrecording_restart
@@ -727,7 +714,8 @@ class Main(QtGui.QMainWindow):
 
             # create tabs for cameras
             for cam_name, cam in self.cameras.items():
-                self.video_tabs[cam_name] = VideoTab(self, cam_name, parent=self)
+                # self.video_tabs[cam_name] = VideoTab(self, cam_name, parent=self)
+                self.video_tabs[cam_name] = VideoTab(self, cam_name)
                 self.videos.addTab(self.video_tabs[cam_name], cam_name)
 
             # create threads for cameras

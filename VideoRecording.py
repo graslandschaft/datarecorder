@@ -28,9 +28,8 @@ class VideoRecording(QtCore.QObject):
         self.filename = camera.filename
         current_fn = '{:04d}__'.format(file_counter) + self.filename + '.avi'
         out_path = os.path.join(self.save_dir, current_fn)
-        self.metadata_fn = '{:04d}__'.format(file_counter) + self.filename + '_timestamps.dat'
-
-        self.filename_metadata = filename_metadata
+        metadata_fn = '{:04d}__'.format(file_counter) + self.filename + '_timestamps.dat'
+        self.metadata_fn = os.path.join(self.save_dir, metadata_fn)
 
         self.write_counter = 0
         quality = 2
@@ -86,7 +85,7 @@ class VideoRecording(QtCore.QObject):
         self.write_metadata(dtime)
 
     def write_metadata(self, current_datetime):
-        with open(self.filename_metadata, 'ab') as f:
+        with open(self.metadata_fn, 'ab') as f:
             f.write(current_datetime)
             f.flush()
 
@@ -108,6 +107,14 @@ class VideoWriter:
         elif os.name == 'posix':
             self.convert_command = "avconv"
         else:
+            # pathlist = ["C:/Program Files/ffmpeg/bin/ffmpeg",
+            #             "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"]
+            # for p in pathlist:
+            #     if os.path.exists(p):
+            #         self.convert_command = p
+            #         break
+            # else:
+            #     sys.exit('ffmpeg not found')
             self.convert_command = "C:/Program Files/ffmpeg/bin/ffmpeg"
             # self.convert_command = "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"
         # check path

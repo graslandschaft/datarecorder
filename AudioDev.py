@@ -43,7 +43,7 @@ class AudioDev(QtCore.QObject):
 
         # AUDIO PARAMETERS
         self.fmt = pyaudio.paInt16
-        self.channels = 1
+        self.channels = 2
         
         if use_hydro:
             self.rate = 44100
@@ -122,7 +122,7 @@ class AudioDev(QtCore.QObject):
             self.display.channel_control.setRange(1, maxchan)
             # self.display.channel_control.setEnabled(True)
 
-        print('channels', self.channels)
+        print('Number of channels: {}'.format(self.channels))
 
         # PREPARE RECORDING
         instream = self.audio.open(

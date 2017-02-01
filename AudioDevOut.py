@@ -93,7 +93,7 @@ class AudioDevOut(QtCore.QObject):
             self.emit(QtCore.SIGNAL("new data (PyQt_PyObject)"), data)
             self.i += frame_count
             # control output amplitude
-            data  = (data*self.output_factor).astype(int)
+            data  = (data*self.output_factor).astype(np.int16)  ## !!! DEAL WITH TOO LARGE OR SMALL VALUES
             data = data.ravel().tostring()
             return (data, pyaudio.paContinue)
         print('end of output audio file reached')
@@ -104,7 +104,7 @@ class AudioDevOut(QtCore.QObject):
         self.audioreader.open(filename)
         params = self.audioreader.getparams()
 
-        self.main.audioout_disp.set_samplerate(self.audioreader.samplerate)
+        self.main.audioout_disp.set_samplerate(self.audioreader.params['rate'])
 
         # select input device
         index, ok = self.get_output_device_index_by_name(self.output_device_name)
@@ -150,11 +150,11 @@ class AudioReader(QtCore.QObject):
         (nchannels, sampwidth, rate, nframes, comptype, compname) = self.wf.getparams()
 
         self.params = dict(nchannels=nchannels,
-                                   sampwidth=sampwidth,
-                                   rate=rate,
-                                   nframes=nframes,
-                                   comptype=comptype,
-                                   compname=compname)
+                           sampwidth=sampwidth,
+                           rate=rate,
+                           nframes=nframes,
+                           comptype=comptype,
+                           compname=compname)
 
     def getparams(self):
         return self.params

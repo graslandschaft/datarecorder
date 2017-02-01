@@ -15,6 +15,14 @@ from VideoRecording import VideoRecording
 
 __author__ = 'Joerg Henninger'
 
+# #########################################################
+
+framerate_focus = 30
+framerate_full = 30
+
+# #########################################################
+
+
 def brg2rgb(frame):
     return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -74,9 +82,9 @@ class Camera(QtCore.QObject):
 
         if self.fast_and_small_video:
             width, height = self.set_resolution(2*480, 2*480)
-            self.framerate = 50.
+            self.framerate = framerate_focus
         else:
-            self.framerate = 30.
+            self.framerate = framerate_full
             self.set_resolution()  # maximize resolution
 
         if self.triggered:

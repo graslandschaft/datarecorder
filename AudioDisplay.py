@@ -43,13 +43,12 @@ class AudioDisplay(QtGui.QGroupBox):
 
         self.figure = plt.figure()
         self.canvas = Canvas(self.figure, parent=self)
-        self.canvas.setMaximumHeight(200)
 
         self.layout().addWidget(self.canvas)
 
         # setup plot
         params = {'axes.labelsize': 22,
-                  'font.size': 16,
+                  'font.size': 14,
                   'ytick.labelsize': 16,
                   'xtick.labelsize': 16}
         plt.rcParams.update(params)
@@ -85,7 +84,7 @@ class AudioDisplay(QtGui.QGroupBox):
             self.channel_control.valueChanged.connect(self.channel_changed)
             xy = 80
         else:
-            xy = 100
+            xy = 80
 
         self.canvas.setMaximumHeight(200)
         self.button_audio_plus.setMinimumHeight(xy)

@@ -1,10 +1,13 @@
 # rec software features
-- display: checkbox: switch between coarse and high-res display
-- display: photo-button: save single image of setup
-- setup photo: save single image of setup at start of recording, if using camera
-- display: add zoom
+! switch-off photo button when recording
+
 - comfort functions: set framerate and ROI
 - change audiodisplay to function like video display: by callback
+- activate multiple audiochannels
+
+- add: selector for camera
+- add options and selector for main options
+    + hydrophone, point grey, fast and small, triggered recording
 
 # structure: 
 - main class should be derived from template: easier to maintain
