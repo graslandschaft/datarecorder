@@ -5,10 +5,11 @@ from collections import deque
 from matplotlib.dates import date2num
 
 try:
-    from PyQt4 import QtGui, QtCore, Qt
-except Exception, details:
-    print 'Unfortunately, your system misses the PyQt4 packages.'
-    quit()
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+except ImportError, details:
+    sys.exit('Unfortunately, your system misses the PyQt5 packages.')
+
 from VideoRecording import VideoRecording
 
 __author__ = 'Fabian Sinz, Joerg Henninger'
@@ -108,13 +109,14 @@ class Camera(QtCore.QObject):
         return dispframe
 
     def get_recframe(self):
+        self.mutex.lock()
         if len(self.recframes):
-            self.mutex.lock()
             recframe = self.recframes.popleft()
             # print(len(self.recframes))
             self.mutex.unlock()
             return recframe
         else:
+            self.mutex.unlock()
             return None
 
     def get_recframesize(self):

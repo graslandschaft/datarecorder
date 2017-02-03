@@ -1,6 +1,8 @@
 # rec software features
 ! switch-off photo button when recording
 
+- 
+
 - comfort functions: set framerate and ROI
 - change audiodisplay to function like video display: by callback
 - activate multiple audiochannels

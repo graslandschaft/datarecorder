@@ -9,6 +9,8 @@ TODO
 - add tool to estimate frame write speed for a chose resoution
 """
 
+debug = True
+
 # ######################################################
 
 import sys, os, time
@@ -19,66 +21,90 @@ import numpy as np
 from PIL import Image as image
 from PIL import ImageQt as iqt
 
+# from Base import Base
 from AudioDev import AudioDev
 from AudioDevOut import AudioDevOut
 from AudioDisplay import AudioDisplay
+from ExperimentControl import ExperimentControl
 
 try:
-    from PyQt4 import QtGui, QtCore, Qt
-except Exception, details:
-    print 'Unfortunately, your system misses the PyQt4 packages.'
-    quit()
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+except ImportError, details:
+    sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
 from VideoCanvas import VideoTab, VideoCanvas
-from Camera_pointgrey import Camera as pgCamera
-from Camera_pointgrey import get_available_flycap_cameras
-from Camera import Camera
+
+from cameramodules import *
+from Camera_dummy import Camera as DummyCamera
+if camera_modules['opencv']:
+    from Camera import Camera as CvCamera
+if camera_modules['pointgrey']:
+    from Camera_pointgrey import Camera as pgCamera
+    from Camera_pointgrey import get_available_flycap_cameras
 
 # ######################################################
 
-class Main(QtGui.QMainWindow):
+class Main(QtWidgets.QMainWindow):
+
+    name = 'fisheye'
+    width = 1000
+    height = 1000
+    offset_left = 100
+    offset_top = 30
+    max_tab_width = 1000
+    min_tab_width = 480
+
+    # HANDLES
+    idle_screen = False
+    audio_playback = False
+    starttime = None
+    saving = False
+    save_dir = None
+    output_dir = None
+    start_delay = 1
+    last_framerate = 0
+    rec_info = dict(rec_info='',
+                         rec_start='',
+                         rec_end='',
+                         comments=list())
+    pointgrey = False
+    use_hydro = False
+    fast_and_small_video = False
+    triggered_video = False
+
+    audio_playback = False
+    audio_bulk_playback = False
+    audio_playback_file = ''
+
+    default_label_text = 'no recording'
+
+    mutex = QtCore.QMutex()
+    threads = list()
+
+    working_dir = os.path.abspath(os.path.curdir)
+
+    ############
+    debug = 0
+    ############
+
+    # create signals
+    sig_idle_screen = pyqtSignal(object)
+    sig_start_saving = pyqtSignal()
+    sig_start_capture = pyqtSignal()
+    sig_start_playback = pyqtSignal()
+    sig_start_recordings = pyqtSignal(object)
+    sig_stop_recordings = pyqtSignal()
+    sig_start_experiment = pyqtSignal()
+
     def __init__( self, app, options=None, parent=None):
         QtCore.QObject.__init__(self, parent)
         self.app = app
-        self.name = 'fisheye'
-
-        self.width = 1000
-        self.height = 1000
-        self.offset_left = 100
-        self.offset_top = 30
-        self.max_tab_width = 1000
-        self.min_tab_width = 480
 
         self.setGeometry(self.offset_left, self.offset_top, self.width, self.height)
-        self.setSizePolicy(Qt.QSizePolicy.Maximum, Qt.QSizePolicy.Maximum)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Maximum)
         self.setMinimumSize(self.width, self.height)
         self.setWindowTitle('FishEye')
-
-        # #################
-
-        # HANDLES
-        self.idle_screen = False
-        self.audio_playback = False
-        self.starttime = None
-        self.saving = False
-        self.working_dir = os.path.abspath(os.path.curdir)
-        self.save_dir = None
-        self.output_dir = None
-        self.start_delay = 1
-        self.last_framerate = 0
-        self.rec_info = dict(rec_info='',
-                             rec_start='',
-                             rec_end='',
-                             comments=list())
-
-        self.pointgrey = True
-        self.use_hydro = True
-        self.fast_and_small_video = False
-        self.triggered_video = False
-
-        ############
-        self.debug = 0
-        ############
 
         # #################
 
@@ -97,28 +123,22 @@ class Main(QtGui.QMainWindow):
         self.recording_restart_time = 0
         self.restart_times = np.arange(3, 25, 1)  # in hours
         self.restart_dts = list()
-
         self.programmed_stop_dt = None
         self.starttime = None
         
         # #################
-        
-        self.mutex = QtCore.QMutex()
-        self.threads = list()
-        
-        # #################
 
         # LAYOUTS
-        self.main = QtGui.QWidget()
+        self.main = QtWidgets.QWidget()
         self.setCentralWidget(self.main)
 
-        self.main_layout = QtGui.QVBoxLayout()
+        self.main_layout = QtWidgets.QVBoxLayout()
         self.main.setLayout(self.main_layout)
 
-        self.top_layout = QtGui.QHBoxLayout()
-        self.audio_layout = QtGui.QVBoxLayout()
-        self.bottom_layout = QtGui.QHBoxLayout()
-        self.bottom_info_layout = QtGui.QHBoxLayout()
+        self.top_layout = QtWidgets.QHBoxLayout()
+        self.audio_layout = QtWidgets.QVBoxLayout()
+        self.bottom_layout = QtWidgets.QHBoxLayout()
+        self.bottom_info_layout = QtWidgets.QHBoxLayout()
 
         self.main_layout.addLayout(self.top_layout)
         self.main_layout.addLayout(self.audio_layout)
@@ -128,7 +148,7 @@ class Main(QtGui.QMainWindow):
         # #################
 
         # POPULATE TOP LAYOUT
-        self.videos = QtGui.QTabWidget()
+        self.videos = QtWidgets.QTabWidget()
         self.videos.setMinimumWidth(self.min_tab_width)
         self.videos.setMaximumWidth(self.max_tab_width)
         self.video_recordings = None
@@ -141,49 +161,56 @@ class Main(QtGui.QMainWindow):
 
         # #################
 
+        self.audiodev = AudioDev(self, use_hydro=self.use_hydro, debug=self.debug, channels=self.audio_channels, fast_and_small_video=self.fast_and_small_video, triggering=self.triggered_video)
+        self.threadAudio = QtCore.QThread(self)
+        self.audiodev.moveToThread( self.threadAudio )
+        self.threads.append(self.threadAudio)
+        self.threadAudio.start()
+
+        # #################
+
         # AUDIO DISPLAY
         # MOVE TO INDEPENDENT THREAD
-        self.audio_disp = AudioDisplay(self, 'Audio Input', channel_control=True, debug=self.debug)
+        self.audio_disp = AudioDisplay(self, self.audiodev, 'Audio Input', channel_control=True, debug=self.debug)
         self.audio_layout.addWidget(self.audio_disp)
 
         self.threadDisp = QtCore.QThread(self)
-        self.audio_disp.moveToThread( self.threadDisp )
+        self.audio_disp.moveToThread(self.threadDisp)
         self.threadDisp.start()
         self.threads.append(self.threadDisp)
 
         # #################
 
         # AUDIO OUTPUT DISPLAY
-        ## defunct .. repair
         if self.audio_playback:
             self.init_replay()  # initialize replay
 
         # #################
 
         # POPULATE BOTTOM LAYOUT
-        self.button_record = QtGui.QPushButton('Start Recording')
-        self.button_stop = QtGui.QPushButton('Stop')
-        self.button_cancel = QtGui.QPushButton('Cancel')
-        self.button_tag = QtGui.QPushButton('&Comment')
-        self.button_idle = QtGui.QPushButton('Pause Display')
+        self.button_record = QtWidgets.QPushButton('Start Recording')
+        self.button_stop = QtWidgets.QPushButton('Stop')
+        # self.button_cancel = QtWidgets.QPushButton('Cancel')
+        self.button_tag = QtWidgets.QPushButton('&Comment')
+        self.button_idle = QtWidgets.QPushButton('Pause Display')
 
         self.button_stop.setDisabled(True)
-        self.button_cancel.setDisabled(True)
+        # self.button_cancel.setDisabled(True)
         self.button_tag.setDisabled(True)
 
         self.button_record.setMinimumHeight(50)
         self.button_stop.setMinimumHeight(50)
-        self.button_cancel.setMinimumHeight(50)
+        # self.button_cancel.setMinimumHeight(50)
         self.button_tag.setMinimumHeight(50)
         self.button_idle.setMinimumHeight(50)
 
         self.bottom_layout.addWidget(self.button_record)
         self.bottom_layout.addWidget(self.button_stop)
-        self.bottom_layout.addWidget(self.button_cancel)
+        # self.bottom_layout.addWidget(self.button_cancel)
         self.bottom_layout.addWidget(self.button_tag)
         self.bottom_layout.addWidget(self.button_idle)
 
-        self.label_time = QtGui.QLabel('', self)
+        self.label_time = QtWidgets.QLabel('', self)
         font = self.label_time.font()
         font.setPointSize(self.label_font_size)
         self.label_time.setFont(font)
@@ -195,49 +222,60 @@ class Main(QtGui.QMainWindow):
         # set initial label
         self.label_time.setText('no recording')
         self.displaytimer = QtCore.QTimer()
-        self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.update_timelabel)
-        self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.timecheck)
-
-        # #################
-
-        self.audioDev = AudioDev(self, use_hydro=self.use_hydro, debug=self.debug, 
-                            fast_and_small_video=self.fast_and_small_video, triggering=self.triggered_video, display=self.audio_disp)
-        self.threadAudio = QtCore.QThread(self)
-        self.audioDev.moveToThread( self.threadAudio )
-        self.threads.append(self.threadAudio)
-        self.threadAudio.start()
+        self.displaytimer.timeout.connect(self.update_timelabel)
+        self.displaytimer.timeout.connect(self.timecheck)
+        # self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.update_timelabel)
+        # self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.timecheck)
 
         # #################
 
         # connect cameras to audio trigger
         if self.triggered_video:
             for cam_name, cam in self.cameras.items():
-                self.connect(self.audioDev, 
-                    QtCore.SIGNAL("grab frame (PyQt_PyObject)"), cam.grab_frame)
+                self.audiodev.sig_grab_frame.connect(cam.grab_frame)
+                # self.connect(self.audiodev,QtCore.SIGNAL("grab frame (PyQt_PyObject)"), cam.grab_frame)
         else:
             for cam_name, cam in self.cameras.items():
-                self.connect(self, QtCore.SIGNAL('start_capture'), cam.start_capture)
+                self.sig_start_capture.connect(cam.start_capture)
+                # self.connect(self, QtCore.SIGNAL('start_capture'), cam.start_capture)
 
         # #################
 
         # start stop
-        self.connect(self, QtCore.SIGNAL('start_saving'), self.audioDev.start_saving)
-        self.connect(self, QtCore.SIGNAL('start_capture'), self.audioDev.start_capture)
+        self.sig_start_saving.connect(self.audiodev.start_saving)
+        self.sig_start_capture.connect(self.audiodev.start_capture)
+        # self.connect(self, QtCore.SIGNAL('start_saving'), self.audiodev.start_saving)
+        # self.connect(self, QtCore.SIGNAL('start_capture'), self.audiodev.start_capture)
 
         # #################
 
         # connect buttons
-        self.connect(self.button_cancel, QtCore.SIGNAL('clicked()'), self.clicked_cancel)
-        self.connect(self.button_record, QtCore.SIGNAL('clicked()'), self.clicked_start)
-        self.connect(self.button_stop, QtCore.SIGNAL('clicked()'), self.clicked_stop)
-        self.connect(self.button_tag, QtCore.SIGNAL('clicked()'), self.clicked_comment)
-        self.connect(self.button_idle, QtCore.SIGNAL('clicked()'), self.clicked_idle)
+        # self.button_cancel.clicked.connect(self.clicked_cancel)
+        self.button_record.clicked.connect(self.clicked_start)
+        self.button_stop.clicked.connect(self.clicked_stop)
+        self.button_tag.clicked.connect(self.clicked_comment)
+        self.button_idle.clicked.connect(self.clicked_idle)
+        # self.connect(self.button_cancel, QtCore.SIGNAL('clicked()'), self.clicked_cancel)
+        # self.connect(self.button_record, QtCore.SIGNAL('clicked()'), self.clicked_start)
+        # self.connect(self.button_stop, QtCore.SIGNAL('clicked()'), self.clicked_stop)
+        # self.connect(self.button_tag, QtCore.SIGNAL('clicked()'), self.clicked_comment)
+        # self.connect(self.button_idle, QtCore.SIGNAL('clicked()'), self.clicked_idle)
 
         # create keyboard shortcuts
         self.create_actions()
         self.create_menu_bar()
 
-        self.emit(QtCore.SIGNAL("start_capture"))
+        if self.audio_bulk_playback:
+            self.exp_control = ExperimentControl(self)
+            self.threadExpCon = QtCore.QThread(self)
+            self.exp_control.moveToThread(self.threadExpCon)
+            self.threads.append(self.threadExpCon)
+            self.threadExpCon.start()
+            self.sig_start_experiment.connect(self.exp_control.clicked_start)
+            self.exp_control.sig_exp_finished.connect(self.experiment_finished)
+
+        self.sig_start_capture.emit()
+        # self.emit(QtCore.SIGNAL("start_capture"))
 
     def create_menu_bar(self):
         self.statusBar()
@@ -251,47 +289,50 @@ class Main(QtGui.QMainWindow):
     # Actions can be used to assign keyboard-shortcuts
     # This method is called in the __init__ method to create keyboard shortcuts
     def create_actions(self):
-        # EXAMPLE
-        # Cancel Recording
-        self.action_cancel = QtGui.QAction("Cancel recording", self)
-        self.action_cancel.setShortcut(Qt.Qt.Key_Escape)
-        self.connect(self.action_cancel, QtCore.SIGNAL('triggered()'), self.clicked_cancel)
-        self.addAction(self.action_cancel)
+        # # Cancel Recording
+        # self.action_cancel = QtWidgets.QAction("Cancel recording", self)
+        # self.action_cancel.setShortcut(Qt.Key_Escape)
+        # self.action_cancel.triggered.connect(self.clicked_cancel)
+        # # self.connect(self.action_cancel, QtCore.SIGNAL('triggered()'), self.clicked_cancel)
+        # self.addAction(self.action_cancel)
 
         # Create a start stop action
-        self.action_start_stop = QtGui.QAction('Start, stop recording',self)
-        self.action_start_stop.setShortcut(Qt.Qt.CTRL+Qt.Qt.Key_Space)
-        self.connect(self.action_start_stop, QtCore.SIGNAL('triggered()'), self.start_stop)
-        self.addAction(self.action_start_stop)
+        # self.action_start_stop = QtWidgets.QAction('Start, stop recording',self)
+        # self.action_start_stop.setShortcut(Qt.CTRL+Qt.Key_Space)
+        # self.action_start_stop.triggered.connect(self.self.start_stop)
+        # # self.connect(self.action_start_stop, QtCore.SIGNAL('triggered()'), self.start_stop)
+        # self.addAction(self.action_start_stop)
 
-        # Create a start stop action
-        self.action_start_stop_delayed = QtGui.QAction('Start, stop recording',self)
-        self.action_start_stop_delayed.setShortcut(Qt.Qt.Key_Space)
-        self.connect(self.action_start_stop_delayed, QtCore.SIGNAL('triggered()'), self.start_stop_delayed)
+        # Create a start stop action for delayed starts
+        self.action_start_stop_delayed = QtWidgets.QAction('Start, stop recording',self)
+        self.action_start_stop_delayed.setShortcut(Qt.Key_Space)
+        self.action_start_stop_delayed.triggered.connect(self.start_stop_delayed)
+        # self.connect(self.action_start_stop_delayed, QtCore.SIGNAL('triggered()'), self.start_stop_delayed)
         self.addAction(self.action_start_stop_delayed)
 
         # Create a Tag
-        self.action_tag = QtGui.QAction('Comment recording',self)
-        self.action_tag.setShortcut(Qt.Qt.CTRL+Qt.Qt.Key_T)
-        self.connect(self.action_tag, QtCore.SIGNAL('triggered()'), self.clicked_comment)
+        self.action_tag = QtWidgets.QAction('Comment recording',self)
+        self.action_tag.setShortcut(Qt.CTRL+Qt.Key_T)
+        self.action_tag.triggered.connect(self.clicked_comment)
+        # self.connect(self.action_tag, QtCore.SIGNAL('triggered()'), self.clicked_comment)
         self.addAction(self.action_tag)
 
         # Change Tabs
-        # self.action_change_tab_left = QtGui.QAction("Go one tab to the right", self)
-        # self.action_change_tab_left.setShortcut(Qt.Qt.CTRL + Qt.Qt.Key_PageDown)
+        # self.action_change_tab_left = QtWidgets.QAction("Go one tab to the right", self)
+        # self.action_change_tab_left.setShortcut(Qt.CTRL + Qt.Key_PageDown)
         # self.connect(self.action_change_tab_left, QtCore.SIGNAL('triggered()'), self.next_tab)
         # self.addAction(self.action_change_tab_left)
 
-        # self.action_change_tab_right = QtGui.QAction("Go one tab to the left", self)
-        # self.action_change_tab_right.setShortcut(Qt.Qt.CTRL + Qt.Qt.Key_PageUp)
+        # self.action_change_tab_right = QtWidgets.QAction("Go one tab to the left", self)
+        # self.action_change_tab_right.setShortcut(Qt.CTRL + Qt.Key_PageUp)
         # self.connect(self.action_change_tab_right, QtCore.SIGNAL('triggered()'), self.prev_tab)
         # self.addAction(self.action_change_tab_right)
 
         # Exit
-        exit_action = QtGui.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
+        exit_action = QtWidgets.QAction(QtGui.QIcon('exit.png'), '&Exit', self)
         exit_action.setShortcut('Alt+Q')
         exit_action.setStatusTip('Exit application')
-        # exit_action.triggered.connect(QtGui.qApp.quit)
+        # exit_action.triggered.connect(QtWidgets.qApp.quit)
         exit_action.triggered.connect(self.close)
         self.exit_action = exit_action
 
@@ -314,31 +355,40 @@ class Main(QtGui.QMainWindow):
             self.clicked_start(self.start_delay)
 
     def clicked_start(self, delay=-1):
-        if delay == -1: delay = self.start_delay
-        ok = self.start_new_recording_session(delay)
-        if not ok:
-            return
         self.button_record.setDisabled(True)
-        self.button_cancel.setEnabled(True)
         self.button_tag.setEnabled(True)
         self.button_stop.setDisabled(False)
-
-    def clicked_cancel(self):
-        self.clicked_stop()
-        self.button_cancel.setEnabled(False)
-        self.button_tag.setEnabled(False)
-
+        if not options.audio_playback_list:
+            if delay == -1: delay = self.start_delay
+            ok = self.start_new_recording_session(delay)
+            if not ok:
+                return
+        else:
+            self.sig_start_experiment.emit()
+            
     def clicked_stop(self):
-        self.stop_all_saving()
+        if options.audio_playback_list:
+            self.exp_control.exp_running = False  # flag to stop experiment
+        self.stop_all_saving()  # stop all ongoing inputs and outputs
         self.button_record.setDisabled(False)
         self.button_stop.setDisabled(True)
-        self.button_cancel.setDisabled(True)
         self.button_tag.setDisabled(True)
+
+    def experiment_finished(self):
+        self.clicked_stop()
+
+    def playback_finished(self):
+        if options.audio_playback_list:
+            print('playback finished: stop all saving')
+            self.stop_all_saving()
+        elif options.audio_playback:
+            print('playback finished: clicked stop')
+            self.clicked_stop()
 
     def clicked_comment(self):
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-        dlg =  QtGui.QInputDialog(self)
-        dlg.setInputMode(QtGui.QInputDialog.TextInput)
+        dlg =  QtWidgets.QInputDialog(self)
+        dlg.setInputMode(QtWidgets.QInputDialog.TextInput)
         dlg.setLabelText('Comment on data:')                        
         dlg.setWindowTitle('Comment')
         dlg.resize(500,200)
@@ -351,11 +401,13 @@ class Main(QtGui.QMainWindow):
         if self.idle_screen:
             self.idle_screen = False
             self.button_idle.setText('Pause Display')
-            self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), False)
+            self.sig_idle_screen.emit(False)
+            # self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), False)
         else:
             self.idle_screen = True
             self.button_idle.setText('Continue Display')
-            self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), True)
+            self.sig_idle_screen.emit(True)
+            # self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), True)
 
     def next_tab(self):
         if self.tab.currentIndex() + 1 < self.tab.count():
@@ -381,23 +433,30 @@ class Main(QtGui.QMainWindow):
         # initialize audio playback and add playback display and increase widget size by 200 points 
         self.audiodevout = AudioDevOut(self, debug=self.debug)
         self.threadAudioOut = QtCore.QThread(self)
-        self.audiodevout.moveToThread( self.threadAudioOut )
+        self.audiodevout.moveToThread(self.threadAudioOut)
         self.threads.append(self.threadAudioOut)
         self.threadAudioOut.start()
 
-        self.audioout_disp = AudioDisplay(self, 'Audio Output', debug=self.debug)
+        self.audioout_disp = AudioDisplay(self, self.audiodevout, 'Audio Output', debug=self.debug)
         self.audio_layout.addWidget(self.audioout_disp)
 
         self.setGeometry(self.offset_left, self.offset_top, self.width, self.height)
         self.setMinimumSize(self.width, self.height)
 
         # connections
-        self.connect(self, QtCore.SIGNAL('start playback'), self.audiodevout.play)
-        self.connect(self.audiodevout, QtCore.SIGNAL("playback finished"), self.clicked_stop)
-        self.connect(self.audiodevout, QtCore.SIGNAL('new data (PyQt_PyObject)'),
-             self.audioout_disp.update_data)
+        self.sig_start_playback.connect(self.audiodevout.play)
+        self.audiodevout.sig_playback_finished.connect(self.playback_finished)
+        self.audiodevout.sig_new_data.connect(self.audioout_disp.update_data)
+        # self.connect(self, QtCore.SIGNAL('start playback'), self.audiodevout.play)
+        # self.connect(self.audiodevout, QtCore.SIGNAL("playback finished"), self.clicked_stop)
+        # self.connect(self.audiodevout, QtCore.SIGNAL('new data (PyQt_PyObject)'),
+             # self.audioout_disp.update_data)
 
     def handle_options(self, options):
+
+        options.audio_playback_list = 'playback_files.txt'
+
+        self.options = options
         if options:
             # # programmed stop-time
             # if options.stop_time:
@@ -439,23 +498,33 @@ class Main(QtGui.QMainWindow):
 
             if options.audio_playback:
                 if os.path.exists(options.audio_playback):
-                    self.audio_playback_file =options.audio_playback
-                    if not os.path.exists(self.audio_playback_file):
+                    self.audio_playback_file = options.audio_playback
+                    if not os.path.exists(options.audio_playback):
                         sys.exit('Output audio-file does not exist')                    
                     self.audio_playback = True
+
+            if options.audio_playback_list:
+                if os.path.exists(options.audio_playback_list):
+                    if not os.path.exists(options.audio_playback_list):
+                        sys.exit('Playback-list-file does not exist')                    
+                    self.audio_playback = True
+                    self.audio_bulk_playback = True
+
+            self.audio_channels = options.audio_channels
+
             if options.show_devices:
-                from AudioDev import show_available_input_devices
-                from AudioDevOut import show_available_output_devices
+                from audiodev import show_available_input_devices
+                from audiodevOut import show_available_output_devices
 
                 show_available_input_devices()
                 show_available_output_devices()
                 sys.exit()
 
-    def start_new_recording_session(self, delay):
-
-        ok = self.query_recording_info()
-        if not ok:
-            return False
+    def start_new_recording_session(self, delay, query=False):
+        if query:
+            ok = self.query_recording_info()
+            if not ok:
+                return False
         self.starttime = datetime.now() + timedelta(seconds=delay)
         self.rec_info['rec_start'] = self.starttime.strftime("%Y-%m-%d  %H:%M:%S")
 
@@ -469,6 +538,7 @@ class Main(QtGui.QMainWindow):
         try:
             os.mkdir(self.save_dir)
         except:
+            print 'start new recording:', self.save_dir
             sys.exit('creation of output directory failed')
 
         self.write_recording_info()
@@ -476,7 +546,8 @@ class Main(QtGui.QMainWindow):
 
         if delay > 0:
             self.delaytimer = QtCore.QTimer()
-            self.connect(self.delaytimer, QtCore.SIGNAL('timeout()'), self.update_delay)
+            self.delaytimer.timeout.connect(self.update_delay)
+            # self.connect(self.delaytimer, QtCore.SIGNAL('timeout()'), self.update_delay)
             self.delaytimer.start(1000)  # msec interval
             self.update_delay()
         else:
@@ -495,27 +566,31 @@ class Main(QtGui.QMainWindow):
 
     def start_recordings(self):
 
-        self.set_restart_times()
+        if not options.audio_playback or options.audio_playback_list:
+            self.set_restart_times()
         self.file_counter += 1
 
         # in case of other synced recording devices:
         ## these have to be ready when the trigger from the audio-device arrives
         self.prepare_other_recordings(self.file_counter)
-        self.audioDev.prepare_recording(self.save_dir, self.file_counter)
-
+        self.audiodev.prepare_recording(self.save_dir, self.file_counter)
+ 
         if self.audio_playback:
+            print('\n# Playing file: {}'.format(os.path.basename(self.audio_playback_file)))
             self.audiodevout.open(self.audio_playback_file)
             # DROP TIMESTAMP
             timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
             s = timestamp + ' \t ' + 'Playback - Using stimulus file: {}'.format(self.audio_playback_file)
             self.set_timestamp(s)
 
+        # start saving and playback
         self.saving = True
         self.start_other_recordings()
-        self.audioDev.start_saving()
+        self.audiodev.start_saving()
 
         if self.audio_playback:
-            self.emit(QtCore.SIGNAL("start playback"))
+            self.sig_start_playback.emit()
+            # self.emit(QtCore.SIGNAL("start playback"))
 
         # DROP TIMESTAMP
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
@@ -559,8 +634,8 @@ class Main(QtGui.QMainWindow):
 
     def query_recording_info(self):
         # query info on recording
-        dlg =  QtGui.QInputDialog(self)
-        dlg.setInputMode(QtGui.QInputDialog.TextInput)
+        dlg =  QtWidgets.QInputDialog(self)
+        dlg.setInputMode(QtWidgets.QInputDialog.TextInput)
         dlg.setLabelText('Info on recording:')                        
         dlg.setWindowTitle('Info on recording')
         dlg.resize(500,200)
@@ -589,11 +664,10 @@ class Main(QtGui.QMainWindow):
             return
         self.saving = False
         self.displaytimer.stop()
-        self.label_time.setText('no recording')
+        self.label_time.setText(self.default_label_text)
 
-        self.audioDev.stop_saving()
+        self.audiodev.stop_saving()
         self.stop_other_recordings()
-
         if self.audio_playback:
             self.audiodevout.stop_playing()
             self.audioout_disp.reset_plot()
@@ -613,13 +687,14 @@ class Main(QtGui.QMainWindow):
                                  comments=list())
 
     def restart_audio_capture(self):
-        self.audioDev.stop_recording()
+        self.audiodev.stop_recording()
         self.msleep(200)
-        self.emit(QtCore.SIGNAL("start_capture"))
+        self.sig_start_capture(emit)
+        # self.emit(QtCore.SIGNAL("start_capture"))
 
     def stop_all_capture(self):
         self.canvastimer.stop()
-        self.audioDev.stop_recording()
+        self.audiodev.stop_recording()
         self.close_other_recordings()
 
     def set_timestamp(self, s):
@@ -658,8 +733,8 @@ class Main(QtGui.QMainWindow):
 
     def prepare_other_recordings(self, file_counter):
         if self.triggered_video:
-            framerate = self.audioDev.get_defined_framerate()
-            if self.last_framerate < self.audioDev.get_defined_framerate()*.8:
+            framerate = self.audiodev.get_defined_framerate()
+            if self.last_framerate < self.audiodev.get_defined_framerate()*.8:
                 framerate = self.last_framerate
                 self.raise_warning('Actual video framerate much smaller than defined framerate!')
 
@@ -675,7 +750,7 @@ class Main(QtGui.QMainWindow):
 
     def stop_other_recordings(self):
         for cam_name, cam in self.cameras.items():
-            cam.stop_saving(self.audioDev.grabframe_counter)
+            cam.stop_saving(self.audiodev.grabframe_counter)
 
     def close_other_recordings(self):
         QtCore.QThread.msleep(500)
@@ -687,28 +762,32 @@ class Main(QtGui.QMainWindow):
 
     def populate_video_tabs(self):
 
-        if self.pointgrey:
+        self.cameras = dict()  # container for cameras
+        if debug:
+                cam = DummyCamera(self)
+                cam.name = 'DummyCam'
+                self.cameras[cam.name] = cam
+
+        elif self.pointgrey and camera_modules['pointgrey']:
             cam_num = get_available_flycap_cameras()
             print('Number of flycap-cameras: {}'.format(cam_num))
 
             # put cameras into dictionary
-            self.cameras = dict()
             for j in xrange(cam_num):
                 cam = pgCamera(self, j, fast_and_small_video=self.fast_and_small_video,
                              triggered=self.triggered_video)
                 cam.name = str(j)
                 self.cameras[str(j)] = cam 
 
-        else:
-            camera_device_search_range = range(0, 20)
-            camera_name_format = 'camera%02i'
-            tmp = [cam for cam in [Camera(self, device_no=i) for i in camera_device_search_range] if cam.is_working()]
+        elif camera_modules['opencv']:
+                camera_device_search_range = range(0, 20)
+                camera_name_format = 'cv_camera%02i'
+                tmp = [cam for cam in [CvCamera(self, device_no=i) for i in camera_device_search_range] if cam.is_working()]
 
-            # put cameras into dictionary
-            self.cameras = dict()
-            for j, cam in enumerate(tmp):
-                cam.name = camera_name_format % j
-                self.cameras[cam.name] = cam
+                # put cameras into dictionary
+                for j, cam in enumerate(tmp):
+                    cam.name = camera_name_format % j
+                    self.cameras[cam.name] = cam
 
         if len(self.cameras) > 0:
 
@@ -721,21 +800,23 @@ class Main(QtGui.QMainWindow):
             # create threads for cameras
             self.camera_threads = dict()
             for cam_name, cam in self.cameras.items():
-                self.camera_threads[cam_name] = QtCore.QThread(parent=self)
+                self.camera_threads[cam_name] = QtCore.QThread()
                 cam.moveToThread(self.camera_threads[cam_name])
                 self.camera_threads[cam_name].start()
                 self.threads.append(self.camera_threads[cam_name])
                 # connections
+                self.sig_start_recordings.connect(cam.new_recording)
+                self.sig_stop_recordings.connect(cam.stop_saving)
                 # self.connect(cam, QtCore.SIGNAL("NewFrame(PyQt_PyObject)"), self.update_canvas)
-                self.connect(self, QtCore.SIGNAL("start_recordings ( PyQt_PyObject ) "), cam.new_recording)
-                self.connect(self, QtCore.SIGNAL("stop_recordings"), cam.stop_saving)
+                # self.connect(self, QtCore.SIGNAL("start_recordings ( PyQt_PyObject ) "), cam.new_recording)
+                # self.connect(self, QtCore.SIGNAL("stop_recordings"), cam.stop_saving)
 
         else:
-            self.videos.addTab(QtGui.QWidget(), "No camera found")
+            self.videos.addTab(QtWidgets.QWidget(), "No camera found")
 
         # create timer for updating the video canvas
         self.canvastimer = QtCore.QTimer()
-        self.connect(self.canvastimer, QtCore.SIGNAL('timeout()'), self.update_canvas)
+        self.canvastimer.timeout.connect(self.update_canvas)
         self.canvastimer.start(50)  # 20 Hz
 
     def update_canvas(self):
@@ -782,12 +863,14 @@ if __name__=="__main__":
     # parser.add_option("-k", "--stop_time", action="store", type="string", dest="stop_time", default='')
     parser.add_option("-o", "--output_directory", action="store", type="string", dest="output_dir", default='')
     parser.add_option("-a", "--audio_playback", action="store", type="string", dest="audio_playback", default='')
+    parser.add_option("-l", "--audio_playback_list", action="store", type="string", dest="audio_playback_list", default='')
+    parser.add_option("-c", "--audio_channels", action="store", type="int", dest="audio_channels", default=1)
     parser.add_option("-d", "--devices", action="store_true", dest="show_devices", default=False)
     # parser.add_option("-s", "--instant_start", action="store_true", dest="instant_start", default=False)
     # parser.add_option("-i", "--idle_screen", action="store_true", dest="idle_screen", default=False)
     (options, args) = parser.parse_args(args)
 
-    qapp = QtGui.QApplication(sys.argv)  # create the main application
+    qapp = QtWidgets.QApplication(sys.argv)  # create the main application
     main = Main(qapp, options=options)  # create the mainwindow instance
     main.show()  # show the mainwindow instance
-    exit(qapp.exec_())  # start the event-loop: no signals are sent or received without this.
+    qapp.exec_()  # start the event-loop: no signals are sent or received without this.

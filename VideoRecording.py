@@ -2,20 +2,49 @@ import sys
 import os
 import numpy as np
 
-if os.name == 'posix':
-    import subprocess32 as sp
-else:
-    import subprocess as sp
+# if os.name == 'posix':
+#     import subprocess32 as sp
+# else:
+#     import subprocess as sp
+import subprocess as sp
 import cPickle as pickle
+
 try:
-    from PyQt4 import QtGui, QtCore, Qt
-except Exception, details:
-    print 'Unfortunately, your system misses the PyQt4 packages.'
-    quit()
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+except ImportError, details:
+    sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
 # import cv2
 
+def get_encoder():
+    if os.name == 'posix':
+        pathlist = ['/usr/bin/avconv', '/usr/bin/ffmpeg']
+        for p in pathlist:
+            if os.path.exists(p):
+                return p
+        else:
+            sys.exit('No encoder found')
+        return p
+    else:
+        pathlist = ["C:/Program Files/ffmpeg/bin/ffmpeg",
+                    "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"]
+        for p in pathlist:
+            if os.path.exists(p):
+                self.convert_command = p
+                return p
+                break
+        else:
+            sys.exit('No encoder found')
+        # self.convert_command = "C:/Program Files/ffmpeg/bin/ffmpeg"
+        # self.convert_command = "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"
+
+encoder_path = get_encoder()
+
 class VideoRecording(QtCore.QObject):
+    # signals
+    sig_set_timestamp = pyqtSignal(object)
+    sig_raise_error = pyqtSignal(object)
 
     def __init__(self, camera, save_dir, file_counter, resolution, fps, 
                  color=False, parent=None):
@@ -34,14 +63,17 @@ class VideoRecording(QtCore.QObject):
         self.write_counter = 0
         quality = 2
 
-        self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), camera.main.raise_error)
+        # connects
+        self.sig_set_timestamp.connect(camera.main.set_timestamp)
+        self.sig_raise_error.connect(camera.main.raise_error)
+        # self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), camera.main.raise_error)
+        # self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), camera.main.set_timestamp)
 
         # homebrew
         self.writer = VideoWriter(out_path, 'XVID', int(fps), resolution, quality, color)
         
         # cv2
         # self.writer = cv2.VideoWriter(out_path, cv2.cv.CV_FOURCC(*'XVID'), int(fps), resolution, color)
-        self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), camera.main.set_timestamp)
 
     def start_rec(self):
         self.saving = True
@@ -76,9 +108,9 @@ class VideoRecording(QtCore.QObject):
         # print('rec writing'+str(QtCore.QThread.currentThread()))
         # print('rec writing')
         data = self.camera.get_recframe()
-        if data == None:
-            QtCore.QThread.msleep(5)
-            return
+        # if data == None:
+        #     QtCore.QThread.msleep(5)
+        #     return
         frame, dtime = data
         self.writer.write(frame)
         self.update_write_count()
@@ -102,24 +134,6 @@ class VideoWriter:
     def __init__(self, filename, fourcc='H264', fps=30, frameSize=(640, 480), quality=20, color=False, ffmpeg_path=None):
         
         self.filename = filename
-        if ffmpeg_path is not None:
-            self.convert_command = ffmpeg_path
-        elif os.name == 'posix':
-            self.convert_command = "avconv"
-        else:
-            # pathlist = ["C:/Program Files/ffmpeg/bin/ffmpeg",
-            #             "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"]
-            # for p in pathlist:
-            #     if os.path.exists(p):
-            #         self.convert_command = p
-            #         break
-            # else:
-            #     sys.exit('ffmpeg not found')
-            self.convert_command = "C:/Program Files/ffmpeg/bin/ffmpeg"
-            # self.convert_command = "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"
-        # check path
-        # if not os.path.exists(self.convert_command):
-        #     raise ValueError('ffmpeg path not correct.')
 
         # check if target file exists; if so: delete it
         if os.path.exists(filename):
@@ -137,7 +151,7 @@ class VideoWriter:
 
     def open(self):
         # 4194304 bytes
-        cmd = [self.convert_command, '-loglevel', 'error',
+        cmd = [encoder_path, '-loglevel', 'error',
                '-f', 'rawvideo', '-pix_fmt', 'gray', 
                '-s', '{:d}x{:d}'.format(self.width, self.height),
                '-r', '{:.10f}'.format(self.fps),

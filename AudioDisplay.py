@@ -1,27 +1,32 @@
 import sys, os, time
 import numpy as np
 import matplotlib
-matplotlib.use('Qt4Agg')  # this prevents hickups in new matplotlib versions
-from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavigationToolbar
+# matplotlib.use('Qt4Agg')  # this prevents hickups in new matplotlib versions
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.ticker import MultipleLocator
 import matplotlib.pyplot as plt
 
 try:
-    from PyQt4 import QtGui, QtCore, Qt
-except Exception, details:
-    print 'Unfortunately, your system misses the PyQt4 packages.'
-    quit()
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+except ImportError, details:
+    sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
-class AudioDisplay(QtGui.QGroupBox):
-    def __init__(self, main, name, channel_control=False, debug=0, parent=None):
-        QtGui.QGroupBox.__init__(self, name, parent)
+class AudioDisplay(QtWidgets.QGroupBox):
+    def __init__(self, main, source, name, channel_control=False, debug=0, parent=None):
+        QtWidgets.QGroupBox.__init__(self, name, parent)
 
         # generate layout
-        self.setLayout(QtGui.QHBoxLayout())
+        self.setLayout(QtWidgets.QHBoxLayout())
+
+        self.source = source
 
         # ##############################
+
+        self.mutex = QtCore.QMutex()
         
+        self.main = main
         self.debug = debug
         self.idle_screen = False
         self.audio_diplay_time = 10.
@@ -37,6 +42,8 @@ class AudioDisplay(QtGui.QGroupBox):
 
         self.ymax = 1.
         self.device = None
+
+        self.source.sig_new_data.connect(self.update_data)
 
         # ##############################
         # THE PLOT
@@ -65,18 +72,18 @@ class AudioDisplay(QtGui.QGroupBox):
         # ##############################
         # buttons and channel control
 
-        optionLayout = QtGui.QVBoxLayout()
+        optionLayout = QtWidgets.QVBoxLayout()
         self.layout().addLayout(optionLayout)
         # volume buttons
-        self.button_audio_plus = QtGui.QPushButton('+ Vol')
-        self.button_audio_minus = QtGui.QPushButton('- Vol')
+        self.button_audio_plus = QtWidgets.QPushButton('+ Vol')
+        self.button_audio_minus = QtWidgets.QPushButton('- Vol')
         optionLayout.addWidget(self.button_audio_plus)
         optionLayout.addWidget(self.button_audio_minus)
         if channel_control:
-            spinLayout = QtGui.QHBoxLayout()
+            spinLayout = QtWidgets.QHBoxLayout()
             optionLayout.addLayout(spinLayout)
-            spinLayout.addWidget(QtGui.QLabel('Ch.'))
-            self.channel_control = QtGui.QSpinBox()
+            spinLayout.addWidget(QtWidgets.QLabel('Ch.'))
+            self.channel_control = QtWidgets.QSpinBox()
             spinLayout.addWidget(self.channel_control)
             self.channel_control.setMinimum(1)
             self.channel_control.setMaximum(1)
@@ -95,9 +102,9 @@ class AudioDisplay(QtGui.QGroupBox):
         # ##############################
 
         # connections
-        self.connect(main, QtCore.SIGNAL('idle screen (PyQt_PyObject)'), self.set_idle_screen)
-        self.connect(self.button_audio_plus, QtCore.SIGNAL('clicked()'), self.audio_plus)
-        self.connect(self.button_audio_minus, QtCore.SIGNAL('clicked()'), self.audio_minus)
+        self.main.sig_idle_screen.connect(self.set_idle_screen)
+        self.button_audio_plus.clicked.connect(self.audio_plus)
+        self.button_audio_minus.clicked.connect(self.audio_minus)
 
         QtCore.QTimer().singleShot( 600, self.beautify_layout )
 
@@ -112,7 +119,6 @@ class AudioDisplay(QtGui.QGroupBox):
         self.audio_samplerate = val
 
     def beautify_layout(self):
-
         self.ax.set_axis_on()
         adjust_spines(self.ax, ['bottom'])
         ticks_outward(self.ax)
@@ -123,23 +129,29 @@ class AudioDisplay(QtGui.QGroupBox):
         # self.fill_lines = self.ax.fill_between(self.audio_t, self.audiodata, facecolor='k', edgecolor='k')
 
         self.displaytimer = QtCore.QTimer()
-        self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.update_plot)
+        self.displaytimer.timeout.connect(self.update_plot)
+        # self.connect(self.displaytimer, QtCore.SIGNAL('timeout()'), self.update_plot)
         self.displaytimer.start(100)
 
-    def update_data(self, data):
+    def update_data(self):
+        data = self.source.get_dispdatachunk()
         data = np.fromstring(data, dtype=np.int16).reshape( -1, 1 )[:,0] / ((2.**16)/2.)
         # to keep the view of the data constant, roll both the data and the mask
+        self.mutex.lock()
         self.audiodata = np.roll(self.audiodata, -data.size, axis=-1)
         self.mask = np.roll(self.mask, -data.size, axis=-1)
         self.audiodata[-data.size:] = data
+        self.mutex.unlock()
 
     def update_plot(self):
         if self.debug > 1:
             print('updating audio display')
         if self.idle_screen:
             return
+        self.mutex.lock()
         self.lines.set_data(self.audio_t[self.mask], self.audiodata[self.mask])
         self.canvas.draw()
+        self.mutex.unlock()
 
     def reset_plot(self):
         self.audiodata[:] = 0.
@@ -172,8 +184,8 @@ class Canvas(FigureCanvas):
 
         FigureCanvas.__init__(self, fig)
         FigureCanvas.setSizePolicy(self,
-            QtGui.QSizePolicy.Expanding,
-            QtGui.QSizePolicy.Expanding)
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding)
         FigureCanvas.setMinimumSize(self, 400, 150)
         FigureCanvas.updateGeometry(self)
 

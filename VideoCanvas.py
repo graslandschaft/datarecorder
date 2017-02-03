@@ -3,24 +3,25 @@ from PIL import Image
 from datetime import datetime
 import numpy as np
 from PIL import ImageQt as iqt
+
 try:
-    from PyQt4 import QtGui, QtCore, Qt
-except Exception, details:
-    print 'Unfortunately, your system misses the PyQt4 packages.'
-    quit()
+    from PyQt5 import QtGui, QtCore, QtWidgets
+    from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
+except ImportError, details:
+    sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
 
-class VideoTab(QtGui.QWidget):
+class VideoTab(QtWidgets.QWidget):
     """This class creates the a Tab for Camera data"""
     def __init__(self, main, cam_name, parent=None):
-        QtGui.QWidget.__init__(self, parent)
-        self.setSizePolicy(Qt.QSizePolicy.Expanding, Qt.QSizePolicy.Expanding)
+        QtWidgets.QWidget.__init__(self, parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
         self.cam_name = cam_name
         self.main = main
 
         # generate layout
-        self.setLayout(QtGui.QHBoxLayout())
+        self.setLayout(QtWidgets.QHBoxLayout())
 
         self.canvas = VideoCanvas(self.main, parent=self)
         self.layout().addStretch()
@@ -28,18 +29,18 @@ class VideoTab(QtGui.QWidget):
         self.layout().addStretch()
 
         # options layout
-        videoOptionLayout = QtGui.QVBoxLayout()
+        videoOptionLayout = QtWidgets.QVBoxLayout()
         self.layout().addLayout(videoOptionLayout)
         
         # framerate indicator
-        self.framerate_counter = QtGui.QLabel('', self)
+        self.framerate_counter = QtWidgets.QLabel('', self)
         font = self.framerate_counter.font()
         font.setPointSize(self.main.label_font_size)
         self.framerate_counter.setFont(font)
         videoOptionLayout.addWidget(self.framerate_counter)
 
         # checkbox for coarse and high display quality
-        self.quality_checkbox = QtGui.QCheckBox('High Res display', self)
+        self.quality_checkbox = QtWidgets.QCheckBox('High Res display', self)
         videoOptionLayout.addWidget(self.quality_checkbox)
         self.quality_checkbox.stateChanged.connect(self.canvas.set_display_quality)
         # self.connect(self.quality_checkbox, QtCore.SIGNAL('toggled()'), self.canvas.set_display_quality)
@@ -48,13 +49,13 @@ class VideoTab(QtGui.QWidget):
         # ...
 
         # modify ROI button
-        self.roi_button = QtGui.QPushButton('Modify ROI')
+        self.roi_button = QtWidgets.QPushButton('Modify ROI')
         videoOptionLayout.addWidget(self.roi_button)
         self.roi_button.clicked.connect(self.modify_roi)
         # connection
 
         # photo button
-        self.photo_button = QtGui.QPushButton('Snapshot!')
+        self.photo_button = QtWidgets.QPushButton('Snapshot!')
         videoOptionLayout.addWidget(self.photo_button)
         self.photo_button.clicked.connect(self.canvas.save_photo)
         # connection
@@ -69,13 +70,13 @@ class VideoTab(QtGui.QWidget):
         pass
 
 
-class VideoCanvas(QtGui.QLabel):
+class VideoCanvas(QtWidgets.QLabel):
     """This class creates the video-canvas-widget in the mainwindow by subclassing the QLabel-Widget"""
     def __init__(self, main, parent=None):
-        QtGui.QLabel.__init__(self, parent)
-        self.setAlignment(Qt.Qt.AlignVCenter | Qt.Qt.AlignHCenter)
-        self.setSizePolicy(Qt.QSizePolicy.Expanding, Qt.QSizePolicy.Expanding)
-        self.setFrameStyle(Qt.QFrame.Panel | Qt.QFrame.Sunken)
+        QtWidgets.QLabel.__init__(self, parent)
+        self.setAlignment(Qt.AlignVCenter | Qt.AlignHCenter)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Sunken)
         
         self.mutex = QtCore.QMutex()
         self.photo = False
@@ -103,7 +104,7 @@ class VideoCanvas(QtGui.QLabel):
         elif (event.type() == QtCore.QEvent.Wheel and source is self):
             # print('mouse wheel: {}'.format(event.delta()))
             self.set_focus(event.delta(), event.pos())
-        return QtGui.QWidget.eventFilter(self, source, event)
+        return QtWidgets.QWidget.eventFilter(self, source, event)
 
     def set_focus(self, delta, pos):
         index = delta / 120
@@ -188,12 +189,12 @@ class VideoCanvas(QtGui.QLabel):
         frame = frame[self.top_y:bottom_y:self.video_skipstep, self.left_x:right_x:self.video_skipstep]
 
         # display frame
-        pixmap = QtGui.QPixmap.fromImage(iqt.ImageQt(Image.fromarray(frame)))
-        self.setPixmap(pixmap.scaled(self.size(), Qt.Qt.KeepAspectRatio))
+        pixmap = QtGui.QPixmap.fromImage(iqt.ImageQt(Image.fromarray(frame).convert('RGB')))
+        self.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatio))
 
     # def resizeEvent(self, QResizeEvent):
     #     """ override in-built Qt function """
     #     self.resizeImage()
 
     # def resizeImage(self):
-    #     self.setPixmap(self.pixmap.scaled(self.size(), Qt.Qt.KeepAspectRatio))
+    #     self.setPixmap(self.pixmap.scaled(self.size(), Qt.KeepAspectRatio))
