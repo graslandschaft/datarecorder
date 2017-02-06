@@ -15,8 +15,6 @@ try:
 except ImportError, details:
     sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
-# import cv2
-
 def get_encoder():
     if os.name == 'posix':
         pathlist = ['/usr/bin/avconv', '/usr/bin/ffmpeg']
@@ -27,11 +25,10 @@ def get_encoder():
             sys.exit('No encoder found')
         return p
     else:
-        pathlist = ["C:/Program Files/ffmpeg/bin/ffmpeg",
-                    "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"]
+        pathlist = ["C:/Program Files/ffmpeg/bin/ffmpeg.exe",
+                    "C:/Program Files (x86)/ffmpeg/bin/ffmpeg.exe"]
         for p in pathlist:
             if os.path.exists(p):
-                self.convert_command = p
                 return p
                 break
         else:
@@ -108,9 +105,9 @@ class VideoRecording(QtCore.QObject):
         # print('rec writing'+str(QtCore.QThread.currentThread()))
         # print('rec writing')
         data = self.camera.get_recframe()
-        # if data == None:
-        #     QtCore.QThread.msleep(5)
-        #     return
+        if data == None:
+            QtCore.QThread.msleep(5)
+            return
         frame, dtime = data
         self.writer.write(frame)
         self.update_write_count()

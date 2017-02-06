@@ -35,6 +35,12 @@ def get_available_flycap_cameras():
 
 
 class Camera(QtCore.QObject):
+    # signals
+    # sig_new_frame = pyqtSignal()
+    sig_startrec = pyqtSignal()
+    sig_set_timestamp = pyqtSignal(object)
+    sig_raise_error = pyqtSignal(object)
+
     def __init__(self, main, device_no=0, fast_and_small_video=False, 
         triggered=False, post_processor=None, parent=None):
         """
@@ -68,8 +74,10 @@ class Camera(QtCore.QObject):
 
         self.open()
 
-        self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), main.set_timestamp)
-        self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), main.raise_error)
+        self.sig_set_timestamp.connect(main.set_timestamp)
+        self.sig_raise_error.connect(main.raise_error)
+        # self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), main.set_timestamp)
+        # self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), main.raise_error)
 
     def start_capture(self):
         if not self.triggered:
@@ -259,14 +267,16 @@ class Camera(QtCore.QObject):
 
         if not self.recording.isOpened():
             error = 'Video-recording could not be started.'
-            self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
+            self.sig_raise_error.emit(error)
+            # self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
             return False
 
         self.recordingThread = QtCore.QThread()
         self.recording.moveToThread(self.recordingThread)
         self.recordingThread.start()
-        self.connect(self, QtCore.SIGNAL("StartRec"), self.recording.start_rec)
-        self.emit(QtCore.SIGNAL('StartRec'))
+        # self.connect(self, QtCore.SIGNAL("StartRec"), self.recording.start_rec)
+        self.sig_startrec.connect(self.recording.start_rec)
+        self.sig_startrec.emit()
 
     def is_saving(self):
         self.mutex.lock()
@@ -296,7 +306,8 @@ class Camera(QtCore.QObject):
             if last == self.recording.get_write_count(): double_counter += 1
             if double_counter == 10:
                 error = 'Frames cannot be saved.'
-                self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
+                self.sig_raise_error.emit(error)
+                # self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
                 break
             QtCore.QThread.msleep(100)
 
@@ -309,7 +320,8 @@ class Camera(QtCore.QObject):
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         s = timestamp + ' \t ' + 'All frames written: '
         s += '{} of {}'.format(self.recording.get_write_count(), triggered_frames)
-        self.emit(QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), s)
+        self.sig_set_timestamp.emit(s)
+        # self.emit(QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), s)
 
         self.recording.release()
         self.recordingThread.quit()

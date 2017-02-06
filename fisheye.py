@@ -9,7 +9,7 @@ TODO
 - add tool to estimate frame write speed for a chose resoution
 """
 
-debug = True
+debug = False
 
 # ######################################################
 
@@ -70,7 +70,7 @@ class Main(QtWidgets.QMainWindow):
                          comments=list())
     pointgrey = False
     use_hydro = False
-    fast_and_small_video = False
+    fast_and_small_video = True
     triggered_video = False
 
     audio_playback = False
@@ -768,7 +768,9 @@ class Main(QtWidgets.QMainWindow):
                 cam.name = 'DummyCam'
                 self.cameras[cam.name] = cam
 
-        elif self.pointgrey and camera_modules['pointgrey']:
+        elif self.pointgrey:
+            if not camera_modules['pointgrey']:
+                sys.exit('No Pointgrey-camera found')
             cam_num = get_available_flycap_cameras()
             print('Number of flycap-cameras: {}'.format(cam_num))
 
@@ -779,15 +781,17 @@ class Main(QtWidgets.QMainWindow):
                 cam.name = str(j)
                 self.cameras[str(j)] = cam 
 
-        elif camera_modules['opencv']:
-                camera_device_search_range = range(0, 20)
-                camera_name_format = 'cv_camera%02i'
-                tmp = [cam for cam in [CvCamera(self, device_no=i) for i in camera_device_search_range] if cam.is_working()]
+        else:
+            if not camera_modules['opencv']:
+                sys.exit('No OpenCV-cameras found')
+            camera_device_search_range = range(0, 20)
+            camera_name_format = 'cv_camera%02i'
+            tmp = [cam for cam in [CvCamera(self, device_no=i) for i in camera_device_search_range] if cam.is_working()]
 
-                # put cameras into dictionary
-                for j, cam in enumerate(tmp):
-                    cam.name = camera_name_format % j
-                    self.cameras[cam.name] = cam
+            # put cameras into dictionary
+            for j, cam in enumerate(tmp):
+                cam.name = camera_name_format % j
+                self.cameras[cam.name] = cam
 
         if len(self.cameras) > 0:
 
@@ -810,7 +814,6 @@ class Main(QtWidgets.QMainWindow):
                 # self.connect(cam, QtCore.SIGNAL("NewFrame(PyQt_PyObject)"), self.update_canvas)
                 # self.connect(self, QtCore.SIGNAL("start_recordings ( PyQt_PyObject ) "), cam.new_recording)
                 # self.connect(self, QtCore.SIGNAL("stop_recordings"), cam.stop_saving)
-
         else:
             self.videos.addTab(QtWidgets.QWidget(), "No camera found")
 

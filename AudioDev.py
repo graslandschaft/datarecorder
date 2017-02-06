@@ -334,10 +334,13 @@ class AudioWriter(QtCore.QObject):
 
     def write(self):
         data = self.audiodev.get_datachunk()
+        if data is None: return
         self.outstream.writeframes(data)
  
     def write_metadata(self):
-        writecount, dtime = self.audiodev.get_metachunk()
+        data = self.audiodev.get_metachunk()
+        if data is None: return
+        writecount, dtime = data
         with open(self.metadata_fn, 'ab') as f:
             f.write('{} {}'.format(writecount, dtime))
             f.flush()
