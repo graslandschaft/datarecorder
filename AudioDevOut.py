@@ -29,7 +29,10 @@ class AudioDevOut(QtCore.QObject):
     sig_playback_finished = pyqtSignal()
     sig_new_data = pyqtSignal()
 
-    i = 0
+    mutex = QtCore.QMutex()
+    dispdatachunks = deque()
+    fileindex = 0
+    display = None
 
     def __init__(self, main, debug=0, parent=None):
         """
@@ -39,7 +42,6 @@ class AudioDevOut(QtCore.QObject):
             audio: a handle for subsequent calls of play() and close_audio()
         """
         QtCore.QObject.__init__(self, parent)
-        self.mutex = QtCore.QMutex()
         self.playing = False
         self.main = main
         self.debug = debug
@@ -97,20 +99,19 @@ class AudioDevOut(QtCore.QObject):
     def callback_file(self, in_data, frame_count, time_info, status):
         if not self.is_playing():
             return (None, pyaudio.paComplete)
-        if self.i+frame_count < self.audioreader.params['nframes']:
+        if self.fileindex+frame_count < self.audioreader.params['nframes']:
             # read data from file
             data = self.audioreader.readframes(frame_count)
             if data is None: 
                 print('End of playback file reached')
                 return (None, pyaudio.paComplete)
-            self.i += frame_count
+            self.fileindex += frame_count
             # print('reading', data.shape)
 
             # store data for other threads
-            # self.mutex.lock()
-            # self.dispdatachunks.append(data)
-            # self.mutex.unlock()
-            # self.sig_new_data.emit()
+            self.mutex.lock()
+            self.dispdatachunks.append(data)
+            self.mutex.unlock()
 
             # control output amplitude
             data  = (data*self.output_factor).astype(np.int16)  ## !!! DEAL WITH TOO LARGE OR SMALL VALUES
@@ -126,7 +127,7 @@ class AudioDevOut(QtCore.QObject):
 
         self.dispdatachunks = deque()  # container for display data
 
-        self.main.audioout_disp.set_samplerate(self.audioreader.params['rate'])
+        self.display.samplerate = self.audioreader.params['rate']
 
         # select input device
         index, ok = self.get_output_device_index_by_name(self.output_device_name)
@@ -144,18 +145,21 @@ class AudioDevOut(QtCore.QObject):
         # audio instance
         self.stream = self.audio.open(output_device_index=self.out_device["index"],
             format=pyaudio.paInt16,
-            channels=params['nchannels'], rate=params['rate'], output=True, 
-            stream_callback=self.callback_file, frames_per_buffer=2048)
-
+            channels=params['nchannels'], rate=params['rate'], output=True, start=False,
+            stream_callback=self.callback_file, frames_per_buffer=4096)
+        
         self.playing = True
-        self.i = 0
+        self.fileindex = 0
 
     def play(self):
+        print('start audio stream')
         # QtCore.QThread.msleep(300)
         self.stream.start_stream()
         while self.stream.is_active():
             QtCore.QThread.msleep(100)  # Qt-function: keeps the thread responsive
+        print('audio stream finished')
         self.sig_playback_finished.emit()
+        print('audiodevout: playback finished')
         self.stream.stop_stream()
         self.stream.close()
         self.audioreader.close()
@@ -166,13 +170,19 @@ class AudioDevOut(QtCore.QObject):
 
     def get_dispdatachunk(self):
         self.mutex.lock()
-        if len(self.dispdatachunks):
-            data = self.dispdatachunks.popleft()
-            self.mutex.unlock()
-            return data
-        else:
-            self.mutex.unlock()
-            return None
+        data = [self.dispdatachunks.popleft() for i in xrange(len(self.dispdatachunks))]
+        self.mutex.unlock()
+        return data
+
+    # def get_dispdatachunk(self):
+    #     self.mutex.lock()
+    #     if len(self.dispdatachunks):
+    #         data = self.dispdatachunks.popleft()
+    #         self.mutex.unlock()
+    #         return data
+    #     else:
+    #         self.mutex.unlock()
+    #         return None
 
 
 class AudioReader(QtCore.QObject):

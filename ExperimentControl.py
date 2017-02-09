@@ -2,6 +2,7 @@
 a class for controlling experiments like bulk playbacks of videofiles
 """
 
+import sys
 import shutil
 import os
 from datetime import date, datetime, timedelta
@@ -18,9 +19,13 @@ class ExperimentControl(QtCore.QObject):
 
     save_dir = ''
     exp_running = False
+    rec_running = False
     sig_exp_finished = pyqtSignal()
+    sig_start_rec = pyqtSignal()
 
-    def __init__(self, main, debug=0, parent=None):
+    mutex = QtCore.QMutex()
+
+    def __init__(self, control, debug=0, parent=None):
         QtCore.QObject.__init__(self, parent)
         """
         - redirect start and stop button to experiment control
@@ -29,14 +34,13 @@ class ExperimentControl(QtCore.QObject):
         - read playback file and play files according to list
         - start playback-recording (with or without delay) for each file
         """
-        self.main = main
-        self.main.default_label_text = 'Experiment mode: press start to run'
-        self.main.label_time.setText(self.main.default_label_text)
+        self.control = control
+        self.control.default_label_text = 'Experiment mode: press start to run'
 
         # connect to start signals
-        # self.main.button_record.clicked.connect(self.clicked_start)
-        # self.main.action_start_stop_delayed.triggered.connect(self.clicked_start)
-        # self.main.sig_start_experiment.connect(self.clicked_start)
+        # self.control.button_record.clicked.connect(self.clicked_start)
+        # self.control.action_start_stop_delayed.triggered.connect(self.clicked_start)
+        # self.control.sig_start_experiment.connect(self.clicked_start)
 
         # read playback file
         # generate and set output directory
@@ -48,11 +52,12 @@ class ExperimentControl(QtCore.QObject):
     def prepare_experiment(self):
         # read and test all files
         self.playback_files = list()
-        with open(self.main.options.audio_playback_list, 'r') as f:
+        base = os.path.split(self.control.options.audio_playback_list)[0]
+        with open(self.control.options.audio_playback_list, 'r') as f:
             for line in f.readlines():
                 path = line.strip()
                 if path[0] == '#': continue
-                self.playback_files.append(path)
+                self.playback_files.append(os.path.join(base,path))
         files_missing = [f for f in self.playback_files if not os.path.exists(f)]  # check if files exist
         fm = len(files_missing)
         print('\n'+50*'#'+'\n'+'# New playback experiment')
@@ -65,36 +70,51 @@ class ExperimentControl(QtCore.QObject):
         # create a new directory for the data
         self.starttime = datetime.now()
         save_dirname = self.starttime.strftime("%Y-%m-%d__%H-%M-%S")
-        if self.main.options.output_dir is None:
-            self.main.output_dir = os.path.join(self.working_dir, self.main.name+'_experiment_'+ save_dirname)
+        if self.control.options.output_dir is None:
+            self.control.output_dir = os.path.join(self.working_dir, self.control.name+'_experiment_'+ save_dirname)
         else:
-            self.main.output_dir = os.path.join(self.main.options.output_dir, self.main.name+'_experiment_'+ save_dirname)
+            self.control.output_dir = os.path.join(self.control.options.output_dir, self.control.name+'_experiment_'+ save_dirname)
 
         # create playback directory
         try:
-            os.mkdir(self.main.output_dir)
+            os.mkdir(self.control.output_dir)
         except:
-            print 'start new recording:', self.main.output_dir
+            print 'start new recording:', self.control.output_dir
             sys.exit('creation of output directory failed')
 
         # copy playback file to experiment directory for documentation purposes
-        shutil.copy2(self.main.options.audio_playback_list, self.main.output_dir)
+        shutil.copy2(self.control.options.audio_playback_list, self.control.output_dir)
+
+    def rec_session_finished(self):
+        print('rec session finished')
+        self.mutex.lock()
+        self.rec_running = False
+        self.mutex.unlock()
+
+    def rec_is_running(self):
+        self.mutex.lock()
+        running = self.rec_running
+        self.mutex.unlock()
+        return running
 
     def run_experiment(self):
         self.prepare_experiment()
+
+        # THIS WOULD BE THE TIME TO QUERY FOR A COMMENT AND SET A TIMESTAMP
 
         print('\n'+50*'#'+'\n'+'# Starting Experiment\n')
         self.exp_running = True
         for file in self.playback_files:
             if not self.exp_running: break
-            self.main.audio_playback_file = file
-            self.main.start_new_recording_session(delay=0, query=False)
-            while self.main.saving:
+            self.control.audio_playback_file = file
+            self.rec_running = True
+            self.sig_start_rec.emit()
+            while self.rec_is_running():
                 QtCore.QThread.msleep(100)
-            print( self.exp_running)
+            # print(self.exp_running)
             QtCore.QThread.msleep(1000)
         self.exp_running = False
         # reset
         self.playback_files = list()
-        self.main.audio_playback_file = ''  
+        self.control.audio_playback_file = ''  
         self.sig_exp_finished.emit()

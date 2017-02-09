@@ -41,7 +41,7 @@ class Camera(QtCore.QObject):
     sig_set_timestamp = pyqtSignal(object)
     sig_raise_error = pyqtSignal(object)
 
-    def __init__(self, main, device_no=0, fast_and_small_video=False, 
+    def __init__(self, control, device_no=0, fast_and_small_video=False, 
         triggered=False, post_processor=None, parent=None):
         """
         Initializes a new camera
@@ -50,7 +50,7 @@ class Camera(QtCore.QObject):
         """
         QtCore.QObject.__init__(self, parent)
 
-        self.main = main
+        self.control = control
         self.fast_and_small_video = fast_and_small_video
         self.triggered = triggered
         self.mutex = QtCore.QMutex()
@@ -74,14 +74,14 @@ class Camera(QtCore.QObject):
 
         self.open()
 
-        self.sig_set_timestamp.connect(main.set_timestamp)
-        self.sig_raise_error.connect(main.raise_error)
-        # self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), main.set_timestamp)
-        # self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), main.raise_error)
+        self.sig_set_timestamp.connect(control.set_timestamp)
+        self.sig_raise_error.connect(control.raise_error)
+        # self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), control.set_timestamp)
+        # self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), control.raise_error)
 
-    def start_capture(self):
-        if not self.triggered:
-            QtCore.QTimer().singleShot( 1000, self.continuous_framegrab )
+    # def start_capture(self):
+    #     if not self.triggered:
+    #         QtCore.QTimer().singleShot( 1000, self.continuous_framegrab )
 
     def open(self):
         self.context = fc2.Context()
@@ -90,7 +90,7 @@ class Camera(QtCore.QObject):
         # self.reset_camera()
 
         if self.fast_and_small_video:
-            width, height = self.set_resolution(2*480, 2*480)
+            width, height = self.set_resolution(3*480, 3*480)
             self.framerate = framerate_focus
         else:
             self.framerate = framerate_full
@@ -188,7 +188,7 @@ class Camera(QtCore.QObject):
         self.mutex.lock()
         dispframe = self.dispframe
         self.mutex.unlock()
-        self.dispframe = None
+        # self.dispframe = None
         return dispframe
 
     def get_recframe(self):
@@ -211,9 +211,16 @@ class Camera(QtCore.QObject):
     def grab_frame(self, saving=False):
         # print('cam grab'+str(QtCore.QThread.currentThread()))
         # triggered frame grab: update buffer
-        if self.triggered:
-            ret = self.context.fire_software_trigger()
-        frame = np.array(self.context.retrieve_buffer(self.im))
+        # if self.triggered:
+        #     ret = self.context.fire_software_trigger()
+        try:
+            # print('grabbing frame')
+            frame = np.array(self.context.retrieve_buffer(self.im))
+            # print('grabbed frame')
+        except fc2.ApiError:
+            print('camera grab frame failed')
+            # add timestamp
+            return
         dtime = datetime.now()        # store frames for other threads
  
         # calculate framerate
@@ -244,8 +251,9 @@ class Camera(QtCore.QObject):
         self.mutex.unlock()
         return c
 
-    def stop_recording(self):
+    def stop_capture(self):
         self.mutex.lock()
+        print('stopped camera')
         self.continuous = False
         self.mutex.unlock()
 
@@ -289,27 +297,27 @@ class Camera(QtCore.QObject):
         self.saving = True
         self.mutex.unlock()
 
-    def stop_saving(self, triggered_frames):
+    def stop_saving(self):
         self.mutex.lock()
         self.saving = False
         # self.disconnect(self, QtCore.SIGNAL("NewFrame"), self.recording.write)
         self.mutex.unlock()
         
-        last = self.recording.get_write_count()
-        double_counter = -1
-        while self.get_recframesize() > 0:
-            if self.triggered:
-                total = triggered_frames
-            else:
-                total = self.recording.get_write_count() + self.get_recframesize()
-            print('Writing: {} of {}'.format(self.get_recframesize(), total))
-            if last == self.recording.get_write_count(): double_counter += 1
-            if double_counter == 10:
-                error = 'Frames cannot be saved.'
-                self.sig_raise_error.emit(error)
-                # self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
-                break
-            QtCore.QThread.msleep(100)
+        # last = self.recording.get_write_count()
+        # double_counter = -1
+        # while self.get_recframesize() > 0:
+        #     if self.triggered:
+        #         total = triggered_frames
+        #     else:
+        #         total = self.recording.get_write_count() + self.get_recframesize()
+        #     print('Writing: {} of {}'.format(self.get_recframesize(), total))
+        #     if last == self.recording.get_write_count(): double_counter += 1
+        #     if double_counter == 10:
+        #         error = 'Frames cannot be saved.'
+        #         self.sig_raise_error.emit(error)
+        #         # self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
+        #         break
+        #     QtCore.QThread.msleep(100)
 
         self.recording.stop_recording()
         # reset
@@ -318,10 +326,14 @@ class Camera(QtCore.QObject):
         # wait until all frames are written, then close the recording
         # if triggered_frames == self.recording.get_write_count():
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-        s = timestamp + ' \t ' + 'All frames written: '
-        s += '{} of {}'.format(self.recording.get_write_count(), triggered_frames)
+        s = timestamp + ' \t ' + 'Frames written: '
+        if self.control.cfg['trigger'] is None:
+            s += '{}'.format(self.recording.get_write_count())
+        else:
+            # debug:
+            triggered_frames = 0
+            s += '{} of {}'.format(self.recording.get_write_count(), triggered_frames)
         self.sig_set_timestamp.emit(s)
-        # self.emit(QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), s)
 
         self.recording.release()
         self.recordingThread.quit()

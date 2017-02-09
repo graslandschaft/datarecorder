@@ -2,11 +2,11 @@ import sys
 import os
 import numpy as np
 
-# if os.name == 'posix':
-#     import subprocess32 as sp
-# else:
-#     import subprocess as sp
-import subprocess as sp
+if os.name == 'posix':
+    import subprocess32 as sp
+else:
+    import subprocess as sp
+# import subprocess as sp
 import cPickle as pickle
 
 try:
@@ -33,8 +33,6 @@ def get_encoder():
                 break
         else:
             sys.exit('No encoder found')
-        # self.convert_command = "C:/Program Files/ffmpeg/bin/ffmpeg"
-        # self.convert_command = "C:/Program Files (x86)/ffmpeg/bin/ffmpeg"
 
 encoder_path = get_encoder()
 
@@ -42,12 +40,12 @@ class VideoRecording(QtCore.QObject):
     # signals
     sig_set_timestamp = pyqtSignal(object)
     sig_raise_error = pyqtSignal(object)
+    mutex = QtCore.QMutex()
 
     def __init__(self, camera, save_dir, file_counter, resolution, fps, 
                  color=False, parent=None):
         QtCore.QObject.__init__(self, parent)
 
-        self.mutex = QtCore.QMutex()
         self.saving = False
         self.camera = camera
         self.save_dir = save_dir
@@ -61,17 +59,12 @@ class VideoRecording(QtCore.QObject):
         quality = 2
 
         # connects
-        self.sig_set_timestamp.connect(camera.main.set_timestamp)
-        self.sig_raise_error.connect(camera.main.raise_error)
-        # self.connect(self, QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), camera.main.raise_error)
-        # self.connect(self, QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), camera.main.set_timestamp)
+        self.sig_set_timestamp.connect(camera.control.set_timestamp)
+        self.sig_raise_error.connect(camera.control.raise_error)
 
         # homebrew
         self.writer = VideoWriter(out_path, 'XVID', int(fps), resolution, quality, color)
         
-        # cv2
-        # self.writer = cv2.VideoWriter(out_path, cv2.cv.CV_FOURCC(*'XVID'), int(fps), resolution, color)
-
     def start_rec(self):
         self.saving = True
         self.continuous_writing()
@@ -95,15 +88,32 @@ class VideoRecording(QtCore.QObject):
         self.saving = False
         self.mutex.unlock()
 
+        last = self.get_write_count()
+        double_counter = -1
+        while self.camera.get_recframesize() > 0:
+            # print('Writing: {} of {}'.format(self.recording.get_write_count(), triggered_frames))
+            print('Video frames left to write: {}'.format(self.camera.get_recframesize()))
+            self.write()
+            # if last == self.recording.get_write_count(): double_counter += 1
+            # if double_counter == 10:
+            #     error = 'Frames cannot be saved.'
+            #     self.sig_raise_error.emit(error)
+            #     break
+            # QtCore.QThread.msleep(100)
+
     def recording(self):
         self.mutex.lock()
         s = self.saving
         self.mutex.unlock()
         return s
 
+    def continuous_writing(self):
+        while self.recording():
+            self.write()
+        print('video recording stopped')
+
     def write(self):
         # print('rec writing'+str(QtCore.QThread.currentThread()))
-        # print('rec writing')
         data = self.camera.get_recframe()
         if data == None:
             QtCore.QThread.msleep(5)
@@ -112,22 +122,25 @@ class VideoRecording(QtCore.QObject):
         self.writer.write(frame)
         self.update_write_count()
         self.write_metadata(dtime)
+        if not self.recording:
+            return
 
     def write_metadata(self, current_datetime):
         with open(self.metadata_fn, 'ab') as f:
             f.write(current_datetime)
             f.flush()
 
-    def continuous_writing(self):
-        while self.recording():
-            self.write()
+    # def close(self):
+    #     while len(self.audiodev.datachunks):
+    #         self.write()
+    #     while len(self.audiodev.metachunks):
+    #         self.write_metadata()
 
     def release(self):
         self.writer.release()
 
 
 class VideoWriter:
-
     def __init__(self, filename, fourcc='H264', fps=30, frameSize=(640, 480), quality=20, color=False, ffmpeg_path=None):
         
         self.filename = filename
@@ -168,7 +181,7 @@ class VideoWriter:
 
         if self.fourcc == 'XVID':
             # variable bitrate ranging between 1 to 31
-            # see: https://trac.ffmpeg.org/wiki/Encode/MPEG-4
+            # see: https://trac.ffmpeg .org/wiki/Encode/MPEG-4
             cmd += ['-qscale:v', str(self.quality)]
         
         cmd += [self.filename]
