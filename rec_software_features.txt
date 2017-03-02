@@ -1,19 +1,12 @@
 # rec software features
-! switch-off photo button when recording
-
-- 
-
 - comfort functions: set framerate and ROI
-- change audiodisplay to function like video display: by callback
-- activate multiple audiochannels
 
-- add: selector for camera
+- add config file and read-in/read-out system and GUI option to modify it
+- add option to show all available devices
 - add options and selector for main options
     + hydrophone, point grey, fast and small, triggered recording
 
 # structure: 
-- main class should be derived from template: easier to maintain
-- audiodisplay: do not send data but collect it similar to videoframes
 
 # analysis / experiment improvements
 - analysis: get peak amplitude distribution of pulses -> use it to calibrate audio output
