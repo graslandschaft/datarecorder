@@ -16,6 +16,8 @@ except ImportError, details:
 
 class ExperimentControl(QtCore.QObject):
     # signals
+    sig_set_timestamp = pyqtSignal(object)
+    sig_raise_error = pyqtSignal(object)
 
     save_dir = ''
     exp_running = False
@@ -42,6 +44,9 @@ class ExperimentControl(QtCore.QObject):
         # self.control.action_start_stop_delayed.triggered.connect(self.clicked_start)
         # self.control.sig_start_experiment.connect(self.clicked_start)
 
+        self.sig_set_timestamp.connect(control.set_timestamp)
+        self.sig_raise_error.connect(control.raise_error)
+
         # read playback file
         # generate and set output directory
         # indicate playback of list: 'experiment mode: press start to run'
@@ -65,7 +70,9 @@ class ExperimentControl(QtCore.QObject):
         if fm > 0:
             for f in files_missing:
                 print(f)
-            sys.exit('go and check on your files ...')
+            self.sig_raise_error.emit('\nPlayback files not found.\nGo and check on your files ...')
+            print('go and check on your files ...')
+            return False
 
         # create a new directory for the data
         self.starttime = datetime.now()
@@ -98,7 +105,8 @@ class ExperimentControl(QtCore.QObject):
         return running
 
     def run_experiment(self):
-        self.prepare_experiment()
+        good = self.prepare_experiment()
+        if good is not None: return
 
         # THIS WOULD BE THE TIME TO QUERY FOR A COMMENT AND SET A TIMESTAMP
 

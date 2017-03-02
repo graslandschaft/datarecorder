@@ -103,10 +103,14 @@ class VideoCanvas(QtWidgets.QLabel):
             # print('mouse move: (%d, %d)' % (pos.x(), pos.y()))
         elif (event.type() == QtCore.QEvent.Wheel and source is self):
             # print('mouse wheel: {}'.format(event.delta()))
-            self.set_focus(event.delta(), event.pos())
+            self.mutex.lock()
+            self.set_focus(event.angleDelta(), event.pos())
+            self.mutex.unlock()
+            # self.set_focus(event.delta(), event.pos())
         return QtWidgets.QWidget.eventFilter(self, source, event)
 
     def set_focus(self, delta, pos):
+        delta = delta.y()
         index = delta / 120
         xm, ym = 1.*pos.x()/self.width(), 1.*pos.y()/self.height()  # relative position
         if index > 0 and self.focusindex < self.focuslevels:
@@ -175,10 +179,10 @@ class VideoCanvas(QtWidgets.QLabel):
             self.photo = False
             im = Image.fromarray(frame)
             now = datetime.now().strftime("%Y-%m-%d__%H-%M-%S.%f")[:-3]
-            if self.main.save_dir == None:
+            if self.main.control.save_dir == None:
                 path = os.getcwd()
             else:
-                path = self.main.save_dir
+                path = self.main.control.save_dir
             fn = os.path.join(path, now+'.png')
             im.save(fn)
 
@@ -186,10 +190,32 @@ class VideoCanvas(QtWidgets.QLabel):
         self.frame_y, self.frame_x = frame.shape
         right_x = self.frame_x -self.right_x
         bottom_y = self.frame_y-self.bottom_y
-        frame = frame[self.top_y:bottom_y:self.video_skipstep, self.left_x:right_x:self.video_skipstep]
+
+        # frame = frame[self.top_y:bottom_y:self.video_skipstep, self.left_x:right_x:self.video_skipstep]
+        self.mutex.lock()
+        frame = frame[self.top_y:bottom_y,:]
+        frame = frame[::self.video_skipstep,:]
+        frame = frame[:, self.left_x:right_x]
+        frame = frame[:, ::self.video_skipstep]
+        self.mutex.unlock()
+
+        if len(frame.shape) == 2:
+            form = QtGui.QImage.Format_Indexed8
+        # elif:
+        #     form = Format_RGB888
+        else:
+            return
+
+        # a note for later:
+        # COLORTABLE=[]
+        # for i in range(256): COLORTABLE.append(QtGui.qRgb(i/4,i,i/2))
+        # image.setColorTable(COLORTABLE)
 
         # display frame
-        pixmap = QtGui.QPixmap.fromImage(iqt.ImageQt(Image.fromarray(frame).convert('RGB')))
+        image = QtGui.QImage(frame.ravel(), frame.shape[1],frame.shape[0], form)
+        pixmap = QtGui.QPixmap(image)
+        # pixmap = QtGui.QPixmap.fromImage(iqt.ImageQt(Image.fromarray(frame).convert('RGB')))
+
         self.setPixmap(pixmap.scaled(self.size(), Qt.KeepAspectRatio))
 
     # def resizeEvent(self, QResizeEvent):

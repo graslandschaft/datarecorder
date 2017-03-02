@@ -10,13 +10,17 @@ import matplotlib.pyplot as plt
 try:
     from PyQt5 import QtGui, QtCore, QtWidgets
     from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-except ImportError, details:
+except ImportError as details:
     sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
 class AudioDisplay(QtWidgets.QGroupBox):
     mutex = QtCore.QMutex()
     sig_start_capture = pyqtSignal()
     sig_stop_capture = pyqtSignal()
+    sig_set_timestamp = pyqtSignal(object)
+    sig_raise_error = pyqtSignal(object)
+
+    # displaytimer = QtCore.QTimer()
     
     def __init__(self, main, source, name, channel_control=False, samplerate=44100, 
         playback=True, parent=None):
@@ -28,6 +32,7 @@ class AudioDisplay(QtWidgets.QGroupBox):
 
         # ##############################
         
+        self.name = name
         self.main = main
         self.source.display = self
         self.debug = self.main.debug
@@ -35,6 +40,9 @@ class AudioDisplay(QtWidgets.QGroupBox):
         self.audio_diplay_time = 10.
         self.audio_samplerate = samplerate
         self.disp_samplerate = 200
+
+        self.sig_set_timestamp.connect(main.control.set_timestamp)
+        self.sig_raise_error.connect(main.control.raise_error)
 
         # bufferqt
         self.audio_t = np.arange(-self.audio_diplay_time, 0., 1./self.audio_samplerate)
@@ -99,13 +107,11 @@ class AudioDisplay(QtWidgets.QGroupBox):
 
         # ##############################
 
-        # self.datagrabber = DataGrabber(self)
-        # self.threadDisp = QtCore.QThread()
-        # self.datagrabber.moveToThread(self.threadDisp)
-        # self.main.control.threads.append(self.threadDisp)
-        # self.threadDisp.start()
-
-        self.displaytimer = QtCore.QTimer()
+        self.datagrabber = DataGrabber(self)
+        self.threadDisp = QtCore.QThread()
+        self.datagrabber.moveToThread(self.threadDisp)
+        self.main.control.threads.append(self.threadDisp)
+        self.threadDisp.start()
 
         # connections
         self.main.sig_idle_screen.connect(self.set_idle_screen)
@@ -114,14 +120,14 @@ class AudioDisplay(QtWidgets.QGroupBox):
         QtCore.QTimer().singleShot(0, self.beautify)
 
     def start_capture(self):
-        self.displaytimer.start(100)
-        # self.sig_start_capture.emit()
-        # print('display timer started')
+        # self.displaytimer.start(100)
+        self.sig_start_capture.emit()
+        print('display timer started')
 
     def stop_capture(self):
-        self.displaytimer.stop()
-        # self.sig_start_capture.emit()
-        # print('display timer stopped')
+        # self.displaytimer.stop()
+        self.sig_start_capture.emit()
+        print('display timer stopped')
 
     def beautify(self):
         self.ax.set_axis_on()
@@ -131,15 +137,23 @@ class AudioDisplay(QtWidgets.QGroupBox):
 
         self.lines, = self.ax.plot(self.audio_t[self.mask], self.audiodata[self.mask], '-', color='k')
         # self.fill_lines = self.ax.fill_between(self.audio_t, self.audiodata, facecolor='k', edgecolor='k')
-        self.displaytimer.timeout.connect(self.update_plot)
-        self.displaytimer.start(100)
+        
+        # self.displaytimer.start(1000)
+        self.start_capture()
 
     def update_data(self):
-        data = self.source.get_dispdatachunk()
-        return  # DEBUG
-        if not len(data): return
+        # print('display update_data')
+        datalist = self.source.get_dispdatachunk()
+        if not len(datalist): return
         # print('audio-display: update_data called')
-        data = np.fromstring(np.hstack(data), dtype=np.int16).reshape( -1, 1 )[:,0] / ((2.**16)/2.)
+        try:
+            data = np.fromstring(np.hstack(datalist), dtype=np.int16).reshape( -1, 1 )[:,0] / ((2.**16)/2.)
+        except:
+            print(sys.exc_info()[0])
+            print('length of data: {}'.format(len(data)))
+            for d in datalist:
+                print(d.shape)
+            self.raise_error('Error in Displaydata: {}'.format(self.name))
         # to keep the view of the data constant, roll both the data and the mask
         self.mutex.lock()
         self.audiodata = np.roll(self.audiodata, -data.size, axis=-1)
@@ -147,7 +161,10 @@ class AudioDisplay(QtWidgets.QGroupBox):
         self.audiodata[-data.size:] = data
         self.mutex.unlock()
 
+        self.update_plot()
+
     def update_plot(self):
+        # print('display update plot')
         if self.debug > 1:
             print('updating audio display')
         if self.idle_screen:
@@ -192,18 +209,21 @@ class Canvas(FigureCanvas):
         FigureCanvas.setMinimumSize(self, 400, 150)
         FigureCanvas.updateGeometry(self)
 
-# class DataGrabber(QtCore.QObject):
-#     datatimer = QtCore.QTimer()
-#     def __init__(self, display, parent=None):
-#         QtCore.QObject.__init__(self, parent)
-#         self.display = display
-#         self.datatimer.timeout.connect(self.display.update_data)
+class DataGrabber(QtCore.QObject):
+    datatimer = QtCore.QTimer()
+    def __init__(self, display, parent=None):
+        QtCore.QObject.__init__(self, parent)
+        self.display = display
+        # print('display data grabber initiated')
+        self.datatimer.timeout.connect(self.display.update_data)
+        QtCore.QTimer().singleShot(0, self.start_capture)
 
-#     def start_capture(self):
-#         self.datatimer.start(200)
+    def start_capture(self):
+        # print('display data grabber capture started')
+        self.datatimer.start(50)
 
-#     def stop_capture(self):
-#         self.datatimer.stop()
+    def stop_capture(self):
+        self.datatimer.stop()
 
 
 # ######################################################

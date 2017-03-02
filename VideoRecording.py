@@ -2,11 +2,11 @@ import sys
 import os
 import numpy as np
 
-if os.name == 'posix':
-    import subprocess32 as sp
-else:
-    import subprocess as sp
-# import subprocess as sp
+# if os.name == 'posix':
+#     import subprocess32 as sp
+# else:
+#     import subprocess as sp
+import subprocess as sp
 import cPickle as pickle
 
 try:

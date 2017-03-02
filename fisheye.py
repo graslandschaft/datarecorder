@@ -10,7 +10,7 @@ TODO
 - add tool to estimate frame write speed for a chose resoution
 """
 
-debug = False
+debug = True
 
 # ######################################################
 
@@ -25,7 +25,7 @@ from PIL import ImageQt as iqt
 try:
     from PyQt5 import QtGui, QtCore, QtWidgets
     from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot
-except ImportError, details:
+except ImportError as details:
     print(details)
     sys.exit('Unfortunately, your system misses the PyQt5 packages.')
 
@@ -49,8 +49,8 @@ class Main(QtWidgets.QMainWindow):
     min_tab_width = 480
 
     # HANDLES
-    idle_screen = True
-    idle_toggable = False
+    idle_screen = False
+    idle_toggable = True
 
     # create signals
     sig_idle_screen = pyqtSignal(object)
