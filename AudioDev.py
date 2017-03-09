@@ -57,11 +57,7 @@ class AudioDev(QtCore.QObject):
         # AUDIO PARAMETERS
         self.fmt = pyaudio.paInt16
         self.channels = self.control.cfg['audio_input_channels']
-        
-        if self.control.cfg['audio_input_samplerate']:
-            self.rate = 44100
-        else:
-            self.rate = 44100
+        self.rate = self.control.cfg['audio_input_samplerate']
 
         # TRIGGER-RELATED THINGS
         # if self.fast_and_small_video:
