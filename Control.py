@@ -23,16 +23,17 @@ cfg = dict(audio_input=True,
            audio_output=False,
            video_input=True,
            audio_input_channels=2,
-           audio_input_samplerate=44100,
+           audio_input_samplerate=96000,
            audio_input_chunksize=1024,
-           use_hydro=False, 
-           # use_hydro=True, 
+           # use_hydro=False, 
+           use_hydro=True, 
            audio_output_chunksize=2048,
            pointgrey = True,
            fast_and_small_video=True,
            trigger=None,
            delay=0,
-           scheduled_restarts=False,
+           scheduled_restarts=True,
+           scheduled_restarts_interval=60,
            idle_screen=True)
 
 
@@ -100,7 +101,7 @@ class Control(QtCore.QObject):
         # #################
         # time related variables
         self.recording_restart_time = 0
-        self.restart_times = np.arange(3, 25, 1)  # in hours
+        self.restart_times = np.concatenate((np.arange(0, 24*60, self.cfg['scheduled_restarts_interval']), 24*60))  # in hours
         self.restart_dts = list()
         self.programmed_stop_dt = None
         self.starttime = None
@@ -382,8 +383,8 @@ class Control(QtCore.QObject):
         midnight_today = datetime(now.year, now.month, now.day)+timedelta(hours=24)
         
         self.restart_dts = list()
-        for hours in self.restart_times:
-            new_dt = midnight_yesterday + timedelta(hours=hours)
+        for mi in self.restart_times:
+            new_dt = midnight_yesterday + timedelta(minutes=mi)
             if new_dt > now and new_dt <= midnight_today:
                 self.restart_dts.append(new_dt)
 
