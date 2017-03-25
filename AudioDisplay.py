@@ -147,7 +147,9 @@ class AudioDisplay(QtWidgets.QGroupBox):
         if not len(datalist): return
         # print('audio-display: update_data called')
         try:
-            data = np.fromstring(np.hstack(datalist), dtype=np.int16).reshape( -1, 1 )[:,0] / ((2.**16)/2.)
+            data = np.vstack(datalist)
+            if data.shape[1] > 0:
+                data = data.mean(axis=-1)
         except:
             print(sys.exc_info()[0])
             print('length of data: {}'.format(len(data)))

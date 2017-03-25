@@ -24,9 +24,9 @@ cfg = dict(audio_input=True,
            video_input=True,
            audio_input_channels=2,
            audio_input_samplerate=96000,
-           audio_input_chunksize=1024,
-           # use_hydro=False, 
-           use_hydro=True, 
+           audio_input_chunksize=2048,
+           use_hydro=False, 
+           # use_hydro=True, 
            audio_output_chunksize=2048,
            pointgrey = True,
            fast_and_small_video=True,
@@ -101,7 +101,7 @@ class Control(QtCore.QObject):
         # #################
         # time related variables
         self.recording_restart_time = 0
-        self.restart_times = np.concatenate((np.arange(0, 24*60, self.cfg['scheduled_restarts_interval']), 24*60))  # in hours
+        self.restart_times = np.concatenate((np.arange(self.cfg['scheduled_restarts_interval'], 24*60., self.cfg['scheduled_restarts_interval']), [24*60.]))  # in hours
         self.restart_dts = list()
         self.programmed_stop_dt = None
         self.starttime = None
@@ -388,8 +388,10 @@ class Control(QtCore.QObject):
             if new_dt > now and new_dt <= midnight_today:
                 self.restart_dts.append(new_dt)
 
+
         # debug: test restart times
-        # self.restart_dts = [datetime.now()+timedelta(seconds=20)]
+        # self.restart_dts = [datetime.now()+timedelta(seconds=5 )]
+        # print self.restart_dts
 
     def update_label_info(self):
         timestamp = self.starttime.strftime("%Y-%m-%d  %H:%M:%S")

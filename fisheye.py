@@ -117,16 +117,11 @@ class Main(QtWidgets.QMainWindow):
             samplerate=self.control.cfg['audio_input_samplerate'])
         self.audio_layout.addWidget(self.audio_disp)
 
-        # self.control.sig_start_capture.connect(self.audio_disp.start_capture)
-        # self.control.sig_stop_capture.connect(self.audio_disp.stop_capture)
-
     def init_audio_out_display(self):
         self.height += 200
         self.audioout_disp = AudioDisplay(self, self.control.devices.audiodevout, 'Audio Output', 
             playback=True)
         self.audio_layout.addWidget(self.audioout_disp)
-        # self.control.sig_start_playback.connect(self.audioout_disp.start_capture)
-        # self.control.devices.audiodevout.sig_playback_finished.connect(self.audioout_disp.stop_capture)
         if self.control.options.audio_playback_list:
             self.control.exp_control.sig_exp_finished.connect(self.enable_start)
         elif self.control.options.audio_playback:
@@ -291,12 +286,10 @@ class Main(QtWidgets.QMainWindow):
             self.idle_screen = False
             self.button_idle.setText('Pause Display')
             self.sig_idle_screen.emit(False)
-            # self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), False)
         else:
             self.idle_screen = True
             self.button_idle.setText('Continue Display')
             self.sig_idle_screen.emit(True)
-            # self.emit(QtCore.SIGNAL("idle screen (PyQt_PyObject)"), True)
 
     def next_tab(self):
         if self.tab.currentIndex() + 1 < self.tab.count():
@@ -357,11 +350,6 @@ class Main(QtWidgets.QMainWindow):
 # ######################################################
 
 if __name__=="__main__":
-    # app = QtCore.QCoreApplication(sys.argv)
-    # main = Main( app )
-    # QtCore.QTimer().singleShot( 0, main.run )
-    # sys.exit(app.exec_()) # start eventloop
-
     qapp = QtWidgets.QApplication(sys.argv)  # create the main application
     main = Main(qapp)  # create the mainwindow instance
     main.show()  # show the mainwindow instance

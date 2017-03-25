@@ -1,10 +1,12 @@
 import sys, os, time
 import pyaudio
-import wave
+# import wave
+import numpy as np
 from ctypes import *
 from datetime import date, datetime, timedelta
 from collections import deque
 from matplotlib.dates import date2num
+import soundfile as sf
 
 try:
     from PyQt5 import QtGui, QtCore, QtWidgets
@@ -56,6 +58,7 @@ class AudioDev(QtCore.QObject):
 
         # AUDIO PARAMETERS
         self.fmt = pyaudio.paInt16
+        self.fmt_dtype = np.int16
         self.channels = self.control.cfg['audio_input_channels']
         self.rate = self.control.cfg['audio_input_samplerate']
 
@@ -105,12 +108,12 @@ class AudioDev(QtCore.QObject):
         index, ok = self.get_input_device_index_by_name(self.capture_device_name)
         if ok:
             self.in_device = self.audio.get_device_info_by_index(index)
+            print 
         else:
             if self.control.cfg['use_hydro']:  # enforce the use of the hydrophone and break if it is not available
                 error = 'Audio device not found.'
                 error += '\nDevice: {}'.format(self.capture_device_name)
                 self.sig_raise_error.emit(error)
-                # self.emit(QtCore.SIGNAL('Raise Error (PyQt_PyObject)'), error)
                 return
             else:
                 try:
@@ -123,7 +126,6 @@ class AudioDev(QtCore.QObject):
         timestamp = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         s = timestamp + ' \t ' + 'selected input device: {}'.format(self.in_device['name'])
         self.sig_set_timestamp.emit(s)
-        # self.emit(QtCore.SIGNAL('set timestamp (PyQt_PyObject)'), s)
 
         print('Number of channels: {}'.format(self.channels))
 
@@ -136,39 +138,25 @@ class AudioDev(QtCore.QObject):
 
         while self.is_capturing():
             data = instream.read(self.control.cfg['audio_input_chunksize'])
+            # convert and normalize to +- 1.0
+            data = np.fromstring(data, dtype=self.fmt_dtype).reshape(-1, self.channels).astype(float)/((2.**16)/2.)
 
             # store data for other threads
             self.mutex.lock()
             self.dispdatachunks.append(data)
             self.datachunks.append(data)
             self.mutex.unlock()
-            # self.sig_new_data.emit()
 
             # write timestamps for audio-recording
             self.metadata_counter += self.control.cfg['audio_input_chunksize']
             self.write_counter += self.control.cfg['audio_input_chunksize']
-            if self.metadata_counter >= self.rate:
+            if self.metadata_counter >= self.rate:  # write timestamp about once a second
                 self.metadata_counter = 0
                 # store data for other threads
                 self.mutex.lock()
                 dtime = '{:.10f}\n'.format(date2num(datetime.now()))
                 self.metachunks.append((self.write_counter,dtime))
                 self.mutex.unlock()
-                # self.sig_new_meta.emit()
-
-            # code for triggering capture, e.g. for video frames
-            # if self.triggering:
-            #     # trigger video camera
-            #     sync_counter += 1
-            #     if sync_counter == self.trigger_devisor:
-            #         if self.is_saving():
-            #             self.sig_grab_frame.emit(True)
-            #             # self.emit(QtCore.SIGNAL("grab frame (PyQt_PyObject)"), True)
-            #             self.update_wakeup_count()
-            #         else:
-            #             self.sig_grab_frame.emit(False)
-            #             # self.emit(QtCore.SIGNAL("grab frame (PyQt_PyObject)"), False)
-            #         sync_counter = 0
 
         # stop Recording
         instream.stop_stream()
@@ -228,9 +216,6 @@ class AudioDev(QtCore.QObject):
         self.recordingThread.start()
         self.sig_start_rec.connect(self.audioWriter.start_rec)
         self.sig_start_rec.emit()
-
-        # self.sig_new_data.connect(self.audioWriter.write)
-        # self.sig_new_meta.connect(self.audioWriter.write_metadata)
 
     def start_saving(self):
         self.grabframe_counter = 0
@@ -296,7 +281,7 @@ class AudioWriter(QtCore.QObject):
         channels = audiodev.channels
         sampwidth = audiodev.audio.get_sample_size(audiodev.fmt)
         rate = audiodev.rate
-        self.audio = pyaudio.PyAudio()
+        # self.audio = pyaudio.PyAudio()
         self.metawrite_count = 0
 
         current_fn = '{:04d}__'.format(file_counter) + self.filename + '.wav'
@@ -305,10 +290,16 @@ class AudioWriter(QtCore.QObject):
         metadata_fn = '{:04d}__'.format(file_counter) + self.filename + '_timestamps.dat'
         self.metadata_fn = os.path.join(self.save_dir, metadata_fn)
 
-        self.outstream = wave.open(out_path, 'wb')
-        self.outstream.setnchannels(channels)
-        self.outstream.setsampwidth(sampwidth)
-        self.outstream.setframerate(rate)
+        # soundfile module
+        self.outstream = sf.SoundFile(out_path, 'w', 
+            samplerate=audiodev.rate, 
+            channels=audiodev.channels)
+
+        # wave module
+        # self.outstream = wave.open(out_path, 'wb')
+        # self.outstream.setnchannels(channels)
+        # self.outstream.setsampwidth(sampwidth)
+        # self.outstream.setframerate(rate)
 
         self.sig_timestamp.connect(audiodev.control.set_timestamp)
 
@@ -327,11 +318,10 @@ class AudioWriter(QtCore.QObject):
 
     def write(self):
         data = self.audiodev.get_datachunk()
-        if data == None:
+        if data is None:
             QtCore.QThread.msleep(20)
             return
-        self.outstream.writeframes(data)
-        # print('writing audio')
+        self.outstream.write(data)
  
     def write_metadata(self):
         data = self.audiodev.get_metachunk()

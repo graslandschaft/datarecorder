@@ -2,9 +2,15 @@
 - comfort functions: set framerate and ROI
 
 - add config file and read-in/read-out system and GUI option to modify it
+    + json-based; using pyqtgraph for gui
 - add option to show all available devices
 - add options and selector for main options
     + hydrophone, point grey, fast and small, triggered recording
+- show output path and allow modification
+- add verbose level
+- change audio format: ogg-flac
+- add new video-library
+- add live spec-viewer
 
 # structure: 
 
