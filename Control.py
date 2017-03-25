@@ -19,7 +19,7 @@ except ImportError, details:
 from Devices import Devices
 from ExperimentControl import ExperimentControl
 
-cfg = dict(audio_input=True,
+cfg = dict(audio_input=False,
            audio_output=False,
            video_input=True,
            audio_input_channels=2,
@@ -28,7 +28,7 @@ cfg = dict(audio_input=True,
            use_hydro=False, 
            # use_hydro=True, 
            audio_output_chunksize=2048,
-           pointgrey = True,
+           pointgrey = False,
            fast_and_small_video=True,
            trigger=None,
            delay=0,

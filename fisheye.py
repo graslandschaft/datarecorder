@@ -10,7 +10,7 @@ TODO
 - add tool to estimate frame write speed for a chose resoution
 """
 
-debug = True
+debug = False
 
 # ######################################################
 
